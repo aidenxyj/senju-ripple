@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+traces
+skills
+test
+scripts
+renderer
+.git
+.env
+.env.*
+.playwright-mcp
+*.md
+hw7.json

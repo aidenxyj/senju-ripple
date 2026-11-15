@@ -1,0 +1,17 @@
+{
+  "name": "senju-on-ripple",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "eval": "npm --prefix evals run eval --",
+    "test": "node adapter/test.mjs && node harness/test.mjs && node guard/test.mjs && node shell/test.mjs && node --test context/test/*.test.mjs && npm --prefix eyes test && npm --prefix evals test",
+    "smoke": "node --env-file=.env harness/live-smoke.mjs",
+    "probe": "node --env-file=.env harness/probe.mjs",
+    "watch": "node --env-file=.env harness/live-shell.mjs --headed",
+    "demo:serve": "node harness/demo-serve.mjs",
+    "app": "npm --prefix app start"
+  }
+}

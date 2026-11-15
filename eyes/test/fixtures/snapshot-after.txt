@@ -1,0 +1,29 @@
+### Page
+- Page URL: http://localhost:4517/
+- Page Title: Eyes Test Page
+### Snapshot
+```yaml
+- generic [ref=e1]:
+  - button "Start over" [ref=e18]
+  - heading "Signup" [level=1] [ref=e2]
+  - paragraph [ref=e3]: Fill in the form below.
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - text: Email
+      - textbox "Email" [ref=e6]:
+        - /placeholder: you@example.com
+        - text: a@b.c
+    - generic [ref=e7]:
+      - checkbox "Agree to terms" [checked] [ref=e8]
+      - text: Agree to terms
+    - combobox "Plan" [ref=e9]:
+      - option "Free" [selected]
+      - option "Pro"
+    - button "Submit" [active] [ref=e10]
+    - button "Pause" [ref=e17]
+  - list [ref=e12]:
+    - listitem [ref=e13]:
+      - link "Link A" [ref=e14] [cursor=pointer]:
+        - /url: "#a"
+  - generic [ref=e19]: Thanks, a@b.c
+```

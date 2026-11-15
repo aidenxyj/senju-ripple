@@ -1,0 +1,10 @@
+{
+  "name": "senju-guard",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Checks every Senju action before it runs: repairs bad tool calls, stops loops, asks before sends, payments and deletes.",
+  "scripts": {
+    "test": "node test.mjs"
+  }
+}

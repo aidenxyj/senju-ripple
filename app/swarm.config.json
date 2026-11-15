@@ -1,0 +1,53 @@
+{
+  "model": "ricursiveai/ripple-65b-preview",
+  "plannerModel": "ricursiveai/ripple-65b-preview",
+  "maxAgents": 100,
+  "maxSteps": 300,
+  "tokenBudget": 40000000,
+  "context": {
+    "enabled": true,
+    "clearToolResultsAt": 200000,
+    "keepToolResults": 10,
+    "compactAt": 500000
+  },
+  "trace": true,
+  "hotkey": "CommandOrControl+Shift+Space",
+  "servers": {
+    "browser": {
+      "command": "bundled",
+      "args": [
+        "node_modules/@playwright/mcp/cli.js",
+        "--isolated",
+        "--timeout-settle",
+        "100"
+      ],
+      "app": "Google Chrome",
+      "shared": false,
+      "tile": "playwright",
+      "about": "A fresh Chrome window per worker, for websites. Not signed in to anything at the start"
+    },
+    "files": {
+      "command": "bundled",
+      "args": [
+        "node_modules/@modelcontextprotocol/server-filesystem/dist/index.js",
+        "${WORKSPACE}"
+      ],
+      "app": "Finder",
+      "shared": true,
+      "about": "Read and write files in the shared workspace folder"
+    },
+    "desktop": {
+      "command": "cua-driver",
+      "args": [
+        "mcp"
+      ],
+      "about": "Drives the user's own Mac apps (Cursor, Word, Slack, Discord and any other) in the background through accessibility and window screenshots. The apps are already signed in",
+      "kind": "desktop",
+      "shared": true,
+      "serial": true,
+      "tile": "window",
+      "setup": "To add desktop app control, see \"Desktop apps\" in the README."
+    }
+  },
+  "mode": "local"
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Eyes Test Page</title></head>
+<body>
+  <h1>Signup</h1>
+  <p>Fill in the form below.</p>
+  <form onsubmit="return false">
+    <label>Email <input id="email" type="email" placeholder="you@example.com"></label>
+    <label><input id="agree" type="checkbox"> Agree to terms</label>
+    <select id="plan" aria-label="Plan"><option>Free</option><option>Pro</option></select>
+    <button id="submit" type="button" onclick="submitForm()">Submit</button>
+    <button id="toggle" type="button" onclick="this.textContent = this.textContent === 'Play' ? 'Pause' : 'Play'">Play</button>
+  </form>
+  <ul id="links">
+    <li><a href="#a">Link A</a></li>
+    <li><a href="#b" id="linkb">Link B</a></li>
+  </ul>
+  <div id="out"></div>
+  <script>
+    function submitForm() {
+      document.getElementById('out').textContent = 'Thanks, ' + document.getElementById('email').value;
+      const b = document.createElement('button');
+      b.textContent = 'Start over';
+      b.type = 'button';
+      document.body.prepend(b);
+      document.getElementById('linkb').parentElement.remove();
+    }
+  </script>
+</body>
+</html>

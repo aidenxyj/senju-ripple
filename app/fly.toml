@@ -1,0 +1,31 @@
+# The Ripple team server, its own Fly app.
+# The image needs adapter/, so deploy from the repo root:
+#   fly deploy -c app/fly.toml --dockerfile app/Dockerfile .
+#
+# See https://docs.fly.io/reference/configuration for information about how to use this file.
+#
+
+app = 'senju-ripple-hub'
+primary_region = 'sjc'
+
+[build]
+[env]
+  PORT = '8787'
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '15s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

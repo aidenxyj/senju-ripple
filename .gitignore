@@ -1,0 +1,16 @@
+.env
+.env.*
+node_modules/
+traces/
+evals/results/
+.DS_Store
+.playwright-mcp/
+app/skills/.history/
+app/swarm.config.local.json
+!.env.example
+app/dist/
+__pycache__/
+
+# screenshots and page dumps workers save while playing
+/app/*.png
+/app/*.yml

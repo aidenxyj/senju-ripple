@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Senju</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="cursors"></div>
+  <div id="floats"></div>
+
+  <div id="dock">
+    <!-- Spotlight-style panel: the search field on top, the agents listed under it like results. -->
+    <div id="panel" class="hit" data-state="idle">
+      <form id="bar" autocomplete="off">
+        <span id="state-dot" data-state="idle"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 20.5 20.5"/></svg></span>
+        <input id="prompt" type="text" placeholder="What should the swarm do?" spellcheck="false">
+        <button id="go" type="submit" title="Run (Enter)">Run</button>
+        <button id="stop" type="button" title="Stop the current job" hidden>Stop</button>
+        <button id="reset" type="button" title="Clear the last job: agents, cursors, chat, results and the windows its workers left open" hidden>Reset</button>
+        <button id="open-app" type="button" title="Open this session in Senju">Senju</button>
+        <button id="dismiss" type="button" title="Hide (Esc)">Hide</button>
+      </form>
+      <div id="chips"></div>
+    </div>
+    <div id="account" class="hit" hidden></div>
+    <div id="people"></div>
+    <div id="thread" class="hit" hidden></div>
+    <div id="asks"></div>
+    <div id="card" class="hit" hidden>
+      <button id="card-close" type="button" title="Close">Close</button>
+      <div id="card-summary"></div>
+      <div id="card-usage"></div>
+      <details id="card-details"><summary>Agent reports</summary><div id="card-reports"></div></details>
+    </div>
+    <div id="toasts"></div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

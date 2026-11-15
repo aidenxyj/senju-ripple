@@ -1,0 +1,80 @@
+{
+  "name": "senju",
+  "version": "0.1.0",
+  "description": "A swarm of ghost cursors: parallel Ripple agents acting through MCP, shown on a desktop overlay.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/smoke.mjs && node test/hub.mjs && node test/hub-browser.mjs && node test/cloud.mjs && node test/billing.mjs && node test/sessions.mjs && node test/ripple-context.mjs",
+    "demo": "electron . --demo",
+    "doctor": "node scripts/doctor.mjs",
+    "server": "node server/index.js",
+    "dist": "electron-builder --mac",
+    "dist:dir": "electron-builder --dir",
+    "release": "node scripts/release.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@modelcontextprotocol/server-filesystem": "1.0.0",
+    "@playwright/mcp": "0.0.85",
+    "@supabase/supabase-js": "2.119.0",
+    "ws": "8.22.2"
+  },
+  "devDependencies": {
+    "electron": "45.3.1",
+    "electron-builder": "26.18.0"
+  },
+  "productName": "Senju",
+  "author": "James Gong",
+  "build": {
+    "appId": "com.jamesgongyc.senju",
+    "productName": "Senju",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**",
+      "renderer/**",
+      "launcher/**",
+      "swarm.config.json",
+      "package.json",
+      "!server/**",
+      "!web/**",
+      "web/shared/**",
+      "!test/**",
+      "!scripts/**",
+      "!traces/**",
+      "!skills/**"
+    ],
+    "artifactName": "Senju-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSAppleEventsUsageDescription": "Senju arranges app windows so each agent has its own space on screen."
+      }
+    },
+    "dmg": {
+      "title": "Senju"
+    },
+    "linux": {
+      "target": "dir",
+      "icon": "build/icon.png"
+    }
+  }
+}

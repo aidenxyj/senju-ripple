@@ -1,0 +1,15 @@
+{
+  "name": "senju-evals",
+  "private": true,
+  "type": "module",
+  "description": "Fixed tasks with automatic checkers, run through the Senju swarm on Ripple.",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "eval": "node run.mjs",
+    "test": "node test.mjs && node research/test.mjs",
+    "test:all": "node test.mjs --all",
+    "research": "node research/run.mjs"
+  }
+}

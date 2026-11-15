@@ -1,0 +1,35 @@
+{
+  "book-flight": {
+    "42": "Book the shortest one-way flight from: ABI to: North Platte, NE on 12/11/2016."
+  },
+  "choose-list": {
+    "42": "Select Audrye from the list and click Submit."
+  },
+  "click-button": {
+    "42": "Click on the \"Yes\" button."
+  },
+  "click-checkboxes": {
+    "42": "Select nothing and click Submit."
+  },
+  "email-inbox": {
+    "42": "Find the email by Tiffanie and click the trash icon to delete it."
+  },
+  "enter-date": {
+    "42": "Enter 01/06/2010 as the date and hit submit."
+  },
+  "enter-text": {
+    "42": "Enter \"Keli\" into the text field and press Submit."
+  },
+  "login-user": {
+    "42": "Enter the username \"kenda\" and the password \"GjVJ8\" into the text fields and press login."
+  },
+  "search-engine": {
+    "42": "Use the textbox to enter \"Lyda\" and press \"Search\", then find and click the 5th search result."
+  },
+  "social-media": {
+    "42": "For the user @quis, click on the \"Embed Tweet\" button."
+  },
+  "use-autocomplete": {
+    "42": "Enter an item that starts with \"Afgh\" and ends with \"tan\"."
+  }
+}
