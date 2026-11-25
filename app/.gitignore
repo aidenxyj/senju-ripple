@@ -7,3 +7,7 @@ hw7.json
 dist
 api-key.bin
 sessions
+
+# The desktop app's saved model settings (encrypted with the keychain)
+model-settings.bin
+api-key.bin

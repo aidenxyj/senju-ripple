@@ -1,11 +1,11 @@
-// harness/: wires guard/, context/, sched/ and adapter/ into the swarm engine's Swarm so it runs on Ripple.
+// harness/: wires guard/, context/, sched/ and adapter/ into the swarm engine's Swarm so it runs on any model the adapter can reach.
 // Order per call: Swarm -> guard.guardLlm -> context.fit -> sched.limit -> adapter.
 // With `shell`, workers act on those servers through one senju `sh` tool (shell/) instead of raw MCP tools.
 //
-//   const llm = await makeRippleStack({ env: process.env })
-//   const swarm = await makeRippleSwarm({ config, workspace, emit })
+//   const llm = await makeStack({ env: process.env })
+//   const swarm = await makeSwarm({ config, workspace, emit })
 import { Swarm } from '../app/src/orchestrator.js';
-import { rippleFromEnv } from '../adapter/index.js';
+import { llmFromEnv } from '../adapter/index.js';
 import { limitLlm } from '../sched/index.js';
 import * as guardMod from '../guard/index.js';
 import { guardLlm } from '../guard/index.js';
@@ -22,19 +22,19 @@ async function loadContext() {
 }
 
 /**
- * Model stack every Ripple call goes through: guardLlm -> context.fit -> sched.limit -> adapter.
+ * Model stack every call goes through: guardLlm -> context.fit -> sched.limit -> adapter.
  * @param {object} o
- * @param {object} [o.env]            RIPPLE_* settings (process.env by default)
- * @param {object} [o.llm]            base model client; defaults to the Ripple adapter (tests pass a fake)
+ * @param {object} [o.env]            LLM_* settings (process.env by default)
+ * @param {object} [o.llm]            base model client; defaults to the adapter built from o.env (tests pass a fake)
  * @param {number} [o.concurrency]    at most this many model calls in flight (default 4)
- * @param {number} [o.contextBudget]  input tokens per call, system + tools + messages (default 32000, see docs/ripple-notes.md)
+ * @param {number} [o.contextBudget]  input tokens per call, system + tools + messages (default 32000, see docs/model-notes.md)
  * @param {object|null} [o.context] context/ module to use; null turns trimming off; default loads ../context/
  * @param {boolean|object} [o.guard] guardLlm options; false turns guard off (for --no-guard baselines)
  * @param {Function} [o.onGuard]      guard events (repair-failed, nudge)
  * @param {Function} [o.onCall]       ({ who, ms, stop, inTokens, trimmedFrom, trimmedTo }) after each call, for traces and evals
  */
-export async function makeRippleStack({ env = process.env, llm, concurrency = 4, contextBudget = 32000, onCall, context: ctxOpt, guard = true, onGuard } = {}) {
-  const base = llm ?? rippleFromEnv(env);
+export async function makeStack({ env = process.env, llm, concurrency = 4, contextBudget = 32000, onCall, context: ctxOpt, guard = true, onGuard } = {}) {
+  const base = llm ?? llmFromEnv(env);
   const context = ctxOpt === undefined ? await loadContext() : ctxOpt;
   const limited = limitLlm(base, concurrency);
   const inner = {
@@ -71,9 +71,9 @@ export function whoOf(params) {
   return String(sys ?? '').match(/^You are "([^"]+)"/)?.[1] ?? 'worker';
 }
 
-/** Ripple-safe Swarm config: no server-side context management (Ripple has none), so the swarm engine's client-side trim stays on as a backstop. */
-export function rippleConfig(config = {}) {
-  return { maxAgents: 4, maxSteps: 60, ...config, model: config.model ?? 'ripple', context: { ...(config.context ?? {}), enabled: false } };
+/** Swarm config for the adapter: no server-side context management over an OpenAI-style API, so the swarm engine's client-side trim stays on as a backstop. */
+export function swarmConfig(config = {}) {
+  return { maxAgents: 4, maxSteps: 60, ...config, model: config.model ?? 'default', context: { ...(config.context ?? {}), enabled: false } };
 }
 
 /**
@@ -416,7 +416,7 @@ export function withBatchApprovals(stack, approvals) {
   };
 }
 
-/** Told to every agent that has a senju sh tool. Ripple is terminal-trained, so it chains commands and reaches for screenshots. */
+/** Told to every agent that has a senju sh tool. Terminal-trained models chain commands and reach for screenshots, so it says not to. */
 export const SHELL_NOTE = `How you see and act: through the sh tool only. There are no screenshots and no images: \`senju look\` is how you see the screen, and every action already prints what changed. Never plan or ask for a screenshot. Put each senju command on its own line; do not chain with && or ;. It is not a real shell: ls, cat and other programs do not exist. If a command is not in \`senju help\`, it does not exist.\n\nSends, payments and deletes need the person's approval, so batch them: first look and find every item the goal covers, then call ask_user once listing all of them (for example \"Delete these 5 drafts: A, B, C, D, E\") with the options [\"Approve all\", \"Decline\"]. After \"Approve all\", do every one of them in a single sh call, one command per line. They will not ask again. Never ask once per item.\n\nSign-ins, two-factor codes and CAPTCHAs: never ask for or type a password or code, not even if asked. Call handoff so the person signs in themselves in your window. When handoff returns, senju look. If the page looks unchanged, reload it with senju open <the same url> and look again before handing off a second time.`;
 
 /** Adds SHELL_NOTE to the system prompt of every call whose tools include a senju sh tool, and tells the lead too. */
@@ -436,12 +436,12 @@ export function withShellNote(stack) {
 }
 
 /**
- * A Swarm whose every model call goes through the Ripple stack. Extra opts pass through to Swarm.
+ * A Swarm whose every model call goes through the stack above. Extra opts pass through to Swarm.
  * `shell: true` (or a list of server names, default ['browser']) gives workers the senju sh tool for those servers.
  * `keepBrowsers: true` keeps a finished worker's browser window open until the next job starts or shutdown (the app uses it).
  */
-export async function makeRippleSwarm({ config, workspace = process.cwd(), emit = () => {}, stack, shell = null, connect, keepBrowsers = false, ...rest } = {}) {
-  const base = stack ?? await makeRippleStack();
+export async function makeSwarm({ config, workspace = process.cwd(), emit = () => {}, stack, shell = null, connect, keepBrowsers = false, ...rest } = {}) {
+  const base = stack ?? await makeStack();
   const approvals = createApprovals();
   const llm = shell ? withWaiting(withShellNote(withNoStopAtSignIn(withNoCredentialAsks(withBatchApprovals(base, approvals)))), () => swarm) : withWaiting(base, () => swarm);
   let swarm = null;
@@ -450,7 +450,7 @@ export async function makeRippleSwarm({ config, workspace = process.cwd(), emit 
   const conn = shell ? shellConnect(() => swarm, { connect, approvals, kept, ...(Array.isArray(shell) ? { shellServers: shell } : shell === true ? {} : shell) }) : connect;
   // Grants last one job: a new goal starts with nothing approved. Kept browser windows from the last job close then too.
   const onEvent = (e) => { if (e?.type === 'reset') { approvals.reset(); signInState.clear(); closeKept(); } return emit(e); };
-  swarm = new Swarm({ llm, config: rippleConfig(config), workspace, emit: onEvent, ...(conn ? { connect: conn } : {}), ...rest });
+  swarm = new Swarm({ llm, config: swarmConfig(config), workspace, emit: onEvent, ...(conn ? { connect: conn } : {}), ...rest });
   swarm.approvals = approvals;
   swarm.closeBrowsers = closeKept;
   const shutdown = swarm.shutdown.bind(swarm);

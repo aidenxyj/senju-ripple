@@ -142,7 +142,7 @@ export function parseDuration(text) {
   return Math.round(unit === 'ms' ? n : unit.startsWith('m') ? n * 60_000 : n * 1000);
 }
 
-// Splits a cmd into single commands. Ripple chains commands like a terminal ("senju open URL && senju look",
+// Splits a cmd into single commands. Terminal-trained models chain commands ("senju open URL && senju look",
 // "senju wait 1s; senju look"), so newlines, ";" and "&&" outside quotes all separate commands, run in order.
 // "||" means "only if the first one failed", which senju cannot do, so it is an error rather than a guess.
 // Blank lines and "# comments" are dropped. -> { commands: [string] } | { error }

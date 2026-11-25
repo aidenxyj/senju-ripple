@@ -34,14 +34,14 @@ You can keep the full history and call `fit` before every model call, which is d
 | Export | |
 |---|---|
 | `fit(messages, { maxTokens, system?, tools?, keepToolResults?, summaryTokens? }) -> messages` | the contract |
-| `countTokens(text) -> number` | estimate fitted to Ripple's real `usage.prompt_tokens`: per class weights for whitespace runs, digits and punctuation (see `WEIGHTS` in `tokens.js`), times `SAFETY` 1.2. It errs high: snapshots ~5% over, prose ~25% over. Live check: a transcript fit to 16k came back as 13.7k real tokens. Real counts come back as `usage` |
+| `countTokens(text) -> number` | estimate fitted to one model's real `usage.prompt_tokens`: per class weights for whitespace runs, digits and punctuation (see `WEIGHTS` in `tokens.js`), times `SAFETY` 1.2. It errs high: snapshots ~5% over, prose ~25% over. Live check: a transcript fit to 16k came back as 13.7k real tokens. Real counts come back as `usage` |
 | `countMessages(messages, { system?, tools? }) -> number` | estimate for a whole request; `countMessage`, `countContent`, `countBlock` for parts |
 | `fitReport(messages, opts) -> { messages, tokens, fits, trimmed, summarized, truncated, summary }` | `fit` plus what it did, for traces |
 | `fitAsync(messages, { ...opts, summarize })` | same as `fit`, but asks `summarize(transcript) -> Promise<string>` (for example a cheap model call) for the summary text. Falls back to the extractive summary if it throws or does not fit |
 | `checkMessages(messages) -> string[]` | problems with alternation or tool pairing; empty when valid |
 | `truncateText(text, maxTokens)` | the head/tail cut used in stage 3 |
 
-Budget note: `maxTokens` is what the prompt may use. Leave room for the reply. Reasoning counts against `max_tokens` on Ripple (docs/ripple-notes.md). For example, use `fit(messages, { maxTokens: 32000 - 4000, system, tools })`.
+Budget note: `maxTokens` is what the prompt may use. Leave room for the reply. On reasoning models, reasoning counts against `max_tokens` (docs/model-notes.md). For example, use `fit(messages, { maxTokens: 32000 - 4000, system, tools })`.
 
 ## Tests
 

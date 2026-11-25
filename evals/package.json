@@ -2,7 +2,7 @@
   "name": "senju-evals",
   "private": true,
   "type": "module",
-  "description": "Fixed tasks with automatic checkers, run through the Senju swarm on Ripple.",
+  "description": "Fixed tasks with automatic checkers, run through the Senju swarm on any model.",
   "engines": {
     "node": ">=20.12"
   },

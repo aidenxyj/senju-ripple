@@ -1,4 +1,4 @@
-// Ripple has no server-side context management: the swarm must trim history itself,
+// An OpenAI-style endpoint has no server-side context management: the swarm must trim history itself,
 // and a full context window must shrink the history instead of looping.
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -19,8 +19,8 @@ const isLead = (params) => params.tools?.[0]?.name === 'spawn_agent';
 const resultTexts = (messages) => messages.flatMap((m) => Array.isArray(m.content) ? m.content : [])
   .filter((b) => b.type === 'tool_result').map((b) => (b.content ?? []).map((c) => c.text ?? '').join(''));
 
-// 1. The Ripple client says it has no server-side context management.
-assert.equal(makeLlm('test-key', { RIPPLE_BASE_URL: 'http://127.0.0.1:1/v1' }).serverContext, false);
+// 1. The model client says it has no server-side context management.
+assert.equal(makeLlm('test-key', { LLM_BASE_URL: 'http://127.0.0.1:1/v1', LLM_MODEL: 'test-model' }).serverContext, false);
 
 // 2. Workers on such a client send no server-side context fields and trim old tool results themselves.
 {
@@ -73,4 +73,4 @@ assert.equal(makeLlm('test-key', { RIPPLE_BASE_URL: 'http://127.0.0.1:1/v1' }).s
   assert.equal(calls, 2, `lead made ${calls} calls on a full context window`);
 }
 
-console.log('ripple context test passed');
+console.log('client context test passed');

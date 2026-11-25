@@ -7,6 +7,7 @@ import WebSocket from 'ws';
 import { Billing, costMicro, formEncode, pricing, verifyWebhook, MICRO } from '../server/billing.js';
 import { Hub } from '../server/hub.js';
 import { MemoryStore } from '../server/store-memory.js';
+import { parseSaved, serialize, publicView, fromForm } from '../server/models.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, what, ms = 8000) => { const end = Date.now() + ms; for (;;) { const v = await fn(); if (v) return v; if (Date.now() > end) throw new Error(`timed out waiting for ${what}`); await sleep(20); } };
@@ -17,6 +18,29 @@ assert.equal(costMicro({ input: 1e6, output: 1e6, cacheRead: 1e6, cacheWrite: 1e
 assert.equal(costMicro({ input: 1, output: 0 }, p), 1);                                                 // rounds up, never to zero
 assert.equal(pricing({ SENJU_MARKUP: '2', SENJU_PLAN_USD: '30' }).markup, 2);
 assert.equal(formEncode({ a: 1, b: { c: [{ d: 'x y' }] }, skip: undefined }).toString(), 'a=1&b%5Bc%5D%5B0%5D%5Bd%5D=x+y');
+assert.deepEqual([pricing({ SENJU_RATE_INPUT: '3', SENJU_RATE_OUTPUT: '15' }).input, pricing({ SENJU_RATE_INPUT: '3', SENJU_RATE_OUTPUT: '15' }).output], [3, 15]);
+
+// ---- a person's own model settings: stored as JSON, old rows hold a bare key, the key never goes back -------
+{
+  assert.deepEqual(parseSaved('sk-old-bare-key'), { baseUrl: '', model: '', apiKey: 'sk-old-bare-key' });
+  assert.equal(parseSaved(null), null);
+  const saved = parseSaved(serialize({ baseUrl: 'https://api.example.com/v1/', model: ' model-a ', apiKey: 'sk-1' }));
+  assert.deepEqual(saved, { baseUrl: 'https://api.example.com/v1', model: 'model-a', apiKey: 'sk-1' });
+  assert.deepEqual(publicView(saved), { saved: true, baseUrl: 'https://api.example.com/v1', model: 'model-a', hasKey: true });
+  assert.ok(!JSON.stringify(publicView(saved)).includes('sk-1'));
+  // A blank key keeps the saved one for the same endpoint, and only for it.
+  assert.equal(fromForm({ baseUrl: 'https://api.example.com/v1', model: 'model-b' }, saved).settings.apiKey, 'sk-1');
+  assert.match(fromForm({ baseUrl: 'not a url', model: 'x' }, saved).error, /base URL/);
+  assert.equal(fromForm({ baseUrl: 'http://localhost:8000/v1', model: 'local-model' }, saved).settings.apiKey, '');
+  assert.match(fromForm({ baseUrl: 'not a url', model: 'm' }, null).error, /base URL/);
+  assert.match(fromForm({ baseUrl: 'http://localhost:8000/v1', model: '' }, null).error, /model name/);
+  const ms = new MemoryStore();
+  await ms.setModel('u', saved);
+  assert.equal(typeof ms.secrets.get('u'), 'string');   // one string, as in the encrypted column
+  assert.deepEqual(await ms.getModel('u'), saved);
+  await ms.deleteModel('u');
+  assert.equal(await ms.getModel('u'), null);
+}
 
 // ---- Stripe's signature ----------------------------------------------------------------------
 const SECRET = 'whsec_test';
@@ -92,13 +116,13 @@ assert.deepEqual([summary.active, summary.creditsText, summary.topups], [true, '
 // Every model call here reports 100k input and 20k output tokens. Rates are pinned above ($2 in, $10 out per M) so
 // the amounts stay round: (0.2 + 0.2) x 1.3 = $0.52.
 const PER_CALL = 520_000;
-const seen = { keys: [], calls: 0 };
+const seen = { keys: [], models: [], calls: 0 };
 let endless = false;
 const makeLlm = (key) => ({
   async create(params, { signal } = {}) {
     await sleep(10);
     if (signal?.aborted) throw new Error('aborted');
-    seen.keys.push(key); seen.calls++;
+    seen.keys.push(key.apiKey); seen.models.push(key.model); seen.calls++;
     const usage = { input_tokens: 100000, output_tokens: 20000 };
     const isLead = params.tools?.[0]?.name === 'spawn_agent';
     const last = params.messages.at(-1);
@@ -110,7 +134,7 @@ const makeLlm = (key) => ({
 });
 const config = { model: 'm', plannerModel: 'm', maxAgents: 2, maxSteps: 50, tokenBudget: 1e9, context: { enabled: false } };
 const server = http.createServer();
-const hub = new Hub({ store, makeLlm, config, hostedKey: 'sk-hosted', pricing: billing.p });
+const hub = new Hub({ store, makeLlm, config, hosted: { baseUrl: 'http://server-model.test/v1', model: 'server-model', apiKey: 'sk-hosted' }, pricing: billing.p });
 hub.listen(server);
 await new Promise((r) => server.listen(0, r));
 const connect = async (who) => {
@@ -126,7 +150,7 @@ const error = (c) => c.got.find((m) => m.t === 'error');
 const idle = () => until(() => !hub.teams.get('t1')?.session && [...store.sessions.values()].every((s) => s.status !== 'running'), 'the session to end');
 const jamesWeb = await connect('james'), lindaWeb = await connect('linda'), monaWeb = await connect('mona');
 
-// Mona has neither a key nor a plan.
+// Mona has neither her own model nor a plan.
 monaWeb.say({ t: 'start', goal: 'tidy the notes' });
 assert.equal((await until(() => error(monaWeb), 'no plan')).code, 'no_plan');
 // A plan but too little left to begin.
@@ -137,12 +161,13 @@ monaWeb.say({ t: 'start', goal: 'tidy the notes' });
 assert.equal((await until(() => error(monaWeb), 'no credits')).code, 'no_credits');
 assert.equal(seen.calls, 0);
 
-// Linda subscribes, so her session runs on the server's key and comes off her balance.
+// Linda subscribes, so her session runs on the server's model and comes off her balance.
 lindaWeb.say({ t: 'start', goal: 'summarise the meeting' });
 await until(() => store.sessions.size === 1, 'linda session');
 await idle();
 await sleep(300);   // the retrospective is charged just after
 assert.ok(seen.keys.length >= 1 && seen.keys.every((k) => k === 'sk-hosted'));
+assert.ok(seen.models.every((m) => m === 'server-model'));
 linda = await store.getBilling('linda');
 assert.equal(linda.credits, 30 * MICRO - seen.calls * PER_CALL);
 const charges = store.ledger.filter((l) => l.kind === 'usage');
@@ -154,14 +179,15 @@ assert.ok(lindaSession.costMicro >= PER_CALL);
 assert.ok(lindaWeb.got.some((m) => m.event?.type === 'credits' && m.event.balance === linda.credits));
 assert.ok(!jamesWeb.got.some((m) => m.event?.type === 'credits') && !monaWeb.got.some((m) => m.event?.type === 'credits'));
 
-// James saved his own key: it is used, and nothing is charged even though the server sells credits.
-await store.setKey('james', 'sk-james');
+// James saved his own model: it is used, and nothing is charged even though the server sells credits.
+await store.setModel('james', { baseUrl: 'http://localhost:8000/v1', model: 'local-model', apiKey: 'sk-james' });
 const before = { calls: seen.calls, ledger: store.ledger.length };
 jamesWeb.say({ t: 'start', goal: 'check the calendar' });
 await until(() => store.sessions.size === 2, 'james session');
 await idle();
 await sleep(300);
 assert.ok(seen.keys.slice(before.calls).every((k) => k === 'sk-james'));
+assert.ok(seen.models.slice(before.calls).every((m) => m === 'local-model'));
 assert.equal(store.ledger.length, before.ledger);
 assert.equal((await store.getBilling('james')).credits, 0);
 assert.equal([...store.sessions.values()][1].billing, 'own_key');

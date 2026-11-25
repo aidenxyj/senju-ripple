@@ -1,12 +1,13 @@
 // An in-memory store with the same shape as the Supabase one. Used by the tests, and
 // handy for trying the hub locally: tokens are just "user:<id>".
 import { slug } from '../src/skills.js';
+import { parseSaved, serialize } from './models.js';
 
 export class MemoryStore {
   constructor() {
     this.users = new Map();      // id -> { id, name, email }
     this.teams = new Map();      // id -> { id, name, members: Set<userId> }
-    this.keys = new Map();
+    this.secrets = new Map();   // userId -> the stored string: model settings as JSON (or, from before, a bare key)
     this.devices = new Map();
     this.sessions = new Map();
     this.messages = [];
@@ -28,8 +29,10 @@ export class MemoryStore {
     return t ? { id: t.id, name: t.name, members: [...t.members].map((id) => ({ id, name: this.users.get(id).name })) } : null;
   }
   async upsertDevice(d) { this.devices.set(d.id, d); }
-  async getKey(userId) { return this.keys.get(userId) ?? null; }
-  async setKey(userId, key) { this.keys.set(userId, key); }
+  // A person's own model settings, { baseUrl, model, apiKey }, or null. Stored as a string, like the Supabase store.
+  async getModel(userId) { return parseSaved(this.secrets.get(userId)); }
+  async setModel(userId, settings) { this.secrets.set(userId, serialize(settings)); }
+  async deleteModel(userId) { this.secrets.delete(userId); }
   async createSession(s) { this.sessions.set(s.id, { ...s, title: String(s.goal ?? '').slice(0, 80), status: 'running', turns: [], participants: [s.ownerId], startedAt: new Date().toISOString(), endedAt: null }); }
   async endSession(id, patch) { Object.assign(this.sessions.get(id), patch, { endedAt: new Date().toISOString() }); }
 

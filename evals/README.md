@@ -4,11 +4,11 @@ Fixed tasks with automatic checkers. Each task runs through the swarm engine's `
 
 ```sh
 cd evals
-npm run eval -- --model ripple            # needs RIPPLE_* in ../.env
+npm run eval -- --model llm               # needs LLM_BASE_URL and LLM_MODEL (and a key if the endpoint wants one) in ../.env
 npm run eval -- --model stub              # scripted model that solves each task: checks the runner and checkers
 npm run eval -- --model noop              # scripted model that gives up: every task must fail
-npm run eval -- --model ripple --task web-form --timeout 120
-npm run eval -- --model ripple --no-guard  # without guard/'s guardLlm (on by default for ripple)
+npm run eval -- --model llm --task web-form --timeout 120
+npm run eval -- --model llm --no-guard     # without guard/'s guardLlm (on by default for llm)
 npm test                                  # self-test, no keys needed
 ```
 
@@ -17,7 +17,7 @@ Run `npm install` in `app/` first: the runner imports the swarm and its MCP serv
 Each run writes `results/<time>-<model>.json` (git-ignored): an array with one row per task.
 
 ```json
-{ "task": "sum-csv", "model": "ripple", "pass": true, "steps": 6, "tokens": 5120, "seconds": 14.2, "invalidCalls": 0, "detail": "total 172.00 is correct" }
+{ "task": "sum-csv", "model": "<your model>", "pass": true, "steps": 6, "tokens": 5120, "seconds": 14.2, "invalidCalls": 0, "detail": "total 172.00 is correct" }
 ```
 
 - `steps`: model calls across the lead and all workers.
@@ -39,7 +39,7 @@ Every task gets a fresh scratch folder (`{workspace}`), and browser tasks use a 
 
 ## Suites
 
-`npm run eval -- --model ripple` runs the **core** suite above. Pick another with `--suite hard`, `--suite games`, `--suite benchmarks` or `--suite all`. `--task <id>` finds a task in any suite.
+`npm run eval -- --model llm` runs the **core** suite above. Pick another with `--suite hard`, `--suite games`, `--suite benchmarks` or `--suite all`. `--task <id>` finds a task in any suite.
 
 ### hard (`tasks/hard/`): benchmark and demo
 
@@ -97,11 +97,11 @@ export default {
 
 Then run `npm test`: the stub must pass it and noop must fail it.
 
-## Autoresearch: teach Ripple one task
+## Autoresearch: teach the model one task
 
-Ripple's weights never change. The loop improves a per-task skill folder, `skills/<task>/` (a `SKILL.md` plus optional `examples/` and `policy.json`), which is injected into the lead's and workers' prompts and served through the swarm engine's `read_skill`. The researcher is a coding agent running the `/autoresearch` skill (`.claude/skills/autoresearch/SKILL.md`).
+The model's weights never change. The loop improves a per-task skill folder, `skills/<task>/` (a `SKILL.md` plus optional `examples/` and `policy.json`), which is injected into the lead's and workers' prompts and served through the swarm engine's `read_skill`. The researcher is a coding agent running the `/autoresearch` skill (`.claude/skills/autoresearch/SKILL.md`).
 
-The loop runs on its own copy: `evals/research/sandbox.sh <task>` makes a git worktree (`../ripple-research-<task>`, branch `research/<task>`) with `app/node_modules` and `.env` linked, so training never touches the shared checkout or the app's `app/skills/`.
+The loop runs on its own copy: `evals/research/sandbox.sh <task>` makes a git worktree (`../senju-research-<task>`, branch `research/<task>`) with `app/node_modules` and `.env` linked, so training never touches the shared checkout or the app's `app/skills/`.
 
 ```sh
 /loop /autoresearch expense-report                          # in a coding agent: one generation per iteration, unattended
@@ -112,7 +112,7 @@ node research/curve.mjs                                      # results/research/
 npm run research -- --task expense-report --export          # write the skill to app/skills/expense-report.md for the desktop app
 ```
 
-A generation runs the task k times on fresh variants (`ctx.seed`; training seeds move every generation, unseen seeds are 1001 and up). The swarm is built the way `app/` builds it: `makeRippleStack` + `makeRippleSwarm({ shell: true })`, so browser workers act through the senju shell, with guard, `context.fit` (32k) and `sched`. The skill's policy wraps the whole stack, and confirm cards are approved automatically (`--decline` declines them, and `--no-shell` gives workers the raw MCP tools). Then it scores every run and compares the mean with the task's champion. It keeps the change if the score rises by 0.1, or if one more run passes with no fall in score. Otherwise it restores the skill folder from the champion's snapshot. Each generation adds a row to `research/ledger.jsonl` and a line to `skills/<task>/HISTORY.md`. Episodes, with a readable `transcript.md` each, go to `results/research/<task>/<run>/`.
+A generation runs the task k times on fresh variants (`ctx.seed`; training seeds move every generation, unseen seeds are 1001 and up). The swarm is built the way `app/` builds it: `makeStack` + `makeSwarm({ shell: true })`, so browser workers act through the senju shell, with guard, `context.fit` (32k) and `sched`. The skill's policy wraps the whole stack, and confirm cards are approved automatically (`--decline` declines them, and `--no-shell` gives workers the raw MCP tools). Then it scores every run and compares the mean with the task's champion. It keeps the change if the score rises by 0.1, or if one more run passes with no fall in score. Otherwise it restores the skill folder from the champion's snapshot. Each generation adds a row to `research/ledger.jsonl` and a line to `skills/<task>/HISTORY.md`. Episodes, with a readable `transcript.md` each, go to `results/research/<task>/<run>/`.
 
 **Partial credit.** A checker may return `{ pass, detail, milestones: [{ name, ok }] }` (or its own `score` in [0, 1]). The score is the share of milestones met, and the runner reports the first missed milestone across runs. Without milestones a run scores 1 or 0.
 

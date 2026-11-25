@@ -91,6 +91,9 @@ form.inline { display: flex; gap: 10px; align-items: center; }
 .billing { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; align-items: start; }
 .balance { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .big { font-size: 44px; color: var(--orange); }
+.model-form { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.model-form label { display: flex; flex-direction: column; gap: 6px; }
+select.field { cursor: pointer; }
 
 @media (max-width: 900px) {
   .auth-grid, .sessions, .team { grid-template-columns: 1fr; }

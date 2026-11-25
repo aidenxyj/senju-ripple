@@ -3,12 +3,14 @@
 //   SUPABASE_URL                                   from your Supabase project
 //   SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY  its API keys (the older names
 //                                                  SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY also work)
-//   KEY_ENCRYPTION_SECRET   a long random string; encrypts people's API keys at rest
-//   RIPPLE_API_KEY       optional. With it, people can run sessions on this server's key and pay in credits.
+//   KEY_ENCRYPTION_SECRET   a long random string; encrypts people's saved model settings (and API keys) at rest
+//   LLM_BASE_URL, LLM_MODEL optional. This server's own model: any OpenAI-compatible chat completions endpoint.
+//                           With them (and Stripe), people can run sessions on it and pay in credits.
+//   LLM_API_KEY             optional. Sent to that endpoint, if it needs one.
+//   LLM_MAX_CONTEXT, LLM_VISION   optional. See server/env.example.
 //   STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET   optional. Needed to sell the plan and credits.
 //   PUBLIC_URL              this server's public address, for the pages Stripe sends people back to
 //   PORT                    default 8787
-//   SWARM_MODEL             default ricursiveai/ripple-65b-preview
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -17,7 +19,8 @@ import { Hub } from './hub.js';
 import { handleApi } from './api.js';
 import { SupabaseStore } from './store-supabase.js';
 import { Billing, verifyWebhook } from './billing.js';
-import { makeLlm } from '../src/llm.js';
+import { makeLlm, llmSettings, missingSettings } from '../src/llm.js';
+import { fromForm, publicView } from './models.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = process.env;
@@ -38,11 +41,13 @@ if (missing.length) {
 if (publicKey === secretKey) { console.error('SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY are the same value. The secret key must never be the one sent to browsers.'); process.exit(1); }
 const store = new SupabaseStore({ url: env.SUPABASE_URL, serviceKey: secretKey, encryptionSecret: env.KEY_ENCRYPTION_SECRET });
 const billing = new Billing({ store, env, log: (...a) => console.error(...a) });
-const hostedKey = env.RIPPLE_API_KEY || null;
-if (!env.RIPPLE_BASE_URL) console.error('RIPPLE_BASE_URL is not set: sessions cannot start until it points at your Vast B200 (tools/vast/).');
-if (hostedKey && !billing.enabled) console.error('RIPPLE_API_KEY is set but STRIPE_SECRET_KEY is not: nobody can buy credits, so hosted sessions cannot start.');
+// The server's own model, if it has one.
+const serverModel = llmSettings(env);
+const hosted = missingSettings(serverModel) ? null : serverModel;
+if (!hosted) console.error('No server model (LLM_BASE_URL and LLM_MODEL are not both set): everyone saves their own model settings in the web app.');
+if (hosted && !billing.enabled) console.error('A server model is set (LLM_BASE_URL, LLM_MODEL) but STRIPE_SECRET_KEY is not: nobody can buy credits, so sessions on the server model cannot start.');
 if (billing.enabled && !billing.webhookSecret) console.error('STRIPE_WEBHOOK_SECRET is not set: payments will be taken but credits will not be added.');
-const model = env.SWARM_MODEL ?? 'ricursiveai/ripple-65b-preview';
+const model = serverModel.model || 'model';   // a label only: each session uses the model of the settings it runs on
 const config = {
   model, plannerModel: model,
   maxAgents: Number(env.SWARM_MAX_AGENTS ?? 4), maxSteps: 300, tokenBudget: Number(env.SWARM_TOKEN_BUDGET ?? 40000000),
@@ -62,7 +67,10 @@ const signedIn = (req) => store.verifyToken((req.headers.authorization ?? '').re
 // Where Stripe sends people back to. Set PUBLIC_URL in production; locally the request's own address is right.
 const originOf = (req) => (env.PUBLIC_URL || `${req.headers['x-forwarded-proto'] ?? 'http'}://${req.headers.host}`).replace(/\/+$/, '');
 
-const hub = new Hub({ store, makeLlm, config, hostedKey, pricing: hostedKey ? billing.p : null, traceDir: env.SWARM_TRACE_DIR ?? null, log: (...a) => console.error(...a) });
+// A person's own settings are used as they are: nothing from the server's LLM_* settings is mixed in, so the server's
+// key never goes to someone else's endpoint. Only an old row holding just a key (no base URL) takes the rest from LLM_*.
+const llmFor = (settings) => makeLlm(settings, settings.baseUrl ? {} : { ...env, LLM_MODEL: serverModel.model });
+const hub = new Hub({ store, makeLlm: llmFor, config, hosted, pricing: hosted ? billing.p : null, traceDir: env.SWARM_TRACE_DIR ?? null, log: (...a) => console.error(...a) });
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -74,17 +82,19 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/health') return json(res, 200, { ok: true });
     // What a client needs to reach Supabase. The publishable key is public by design.
     if (url.pathname === '/api/config') return json(res, 200, { supabaseUrl: env.SUPABASE_URL, supabaseAnonKey: publicKey });
-    if (url.pathname === '/api/key') {
+    // A person's own model: { baseUrl, model, apiKey } for any OpenAI-compatible endpoint. The key never comes back.
+    if (url.pathname === '/api/model') {
       const user = await signedIn(req);
       if (!user) return json(res, 401, { error: 'Sign in again.' });
-      if (req.method === 'DELETE') { await store.deleteKey(user.id); return json(res, 200, { ok: true }); }
+      if (req.method === 'GET') return json(res, 200, { ...publicView(await store.getModel(user.id)), hosted: Boolean(hosted) });
+      if (req.method === 'DELETE') { await store.deleteModel(user.id); return json(res, 200, { ok: true }); }
       if (req.method === 'POST') {
-        const key = String((await readBody(req)).key ?? '').trim();
-        if (!/^\S{20,}$/.test(key)) return json(res, 400, { error: 'That does not look like your B200 server key (the RIPPLE_API_KEY its vLLM server was started with).' });
-        await store.setKey(user.id, key);
-        return json(res, 200, { ok: true });
+        const { settings, error } = fromForm(await readBody(req), await store.getModel(user.id));
+        if (error) return json(res, 400, { error });
+        await store.setModel(user.id, settings);
+        return json(res, 200, { ok: true, ...publicView(settings) });
       }
-      return json(res, 405, { error: 'Use POST or DELETE.' });
+      return json(res, 405, { error: 'Use GET, POST or DELETE.' });
     }
     // ---- Sessions, skills, memory, team (the control page) ----
     if (url.pathname.startsWith('/api/') && await handleApi({ req, url, user: await signedIn(req), store, hub, json: (code, body) => (json(res, code, body), true), readBody })) return;
@@ -92,7 +102,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/billing') {
       const user = await signedIn(req);
       if (!user) return json(res, 401, { error: 'Sign in again.' });
-      return json(res, 200, await billing.summary(user.id, { hasOwnKey: Boolean(await store.getKey(user.id)), hosted: Boolean(hostedKey) }));
+      return json(res, 200, await billing.summary(user.id, { hasOwnModel: Boolean(await store.getModel(user.id)), hosted: Boolean(hosted) }));
     }
     if (url.pathname === '/api/billing/checkout' || url.pathname === '/api/billing/portal') {
       if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });

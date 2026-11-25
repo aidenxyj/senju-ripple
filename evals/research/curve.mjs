@@ -31,7 +31,7 @@ function chart(task, rows) {
 
 export function renderCurve(rows) {
   const tasks = [...new Set(rows.map((r) => r.task))];
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ripple learning curve</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skill learning curve</title>
 <style>
 :root{--bg:#fbfaf8;--ink:#1d1d1b;--quiet:#6b6a66;--grid:#e4e2dc;--accent:#2f6fde;--rev:#a9a7a0;--good:#2e8b57}
 @media (prefers-color-scheme:dark){:root{--bg:#161615;--ink:#ecebe7;--quiet:#9b9a95;--grid:#2c2c2a;--accent:#6f9cf0;--rev:#6b6a66;--good:#5cbf86}}
@@ -40,8 +40,8 @@ main{max-width:760px;margin:0 auto;padding:32px 16px}h1{font-size:22px;margin:0 
 h2{font-size:15px;font-weight:600;margin:24px 0 8px}svg{width:100%;height:auto}
 .grid{stroke:var(--grid)}.tick{fill:var(--quiet);font-size:11.5px}.champ{fill:none;stroke:var(--accent);stroke-width:2}
 .kept{fill:var(--accent)}.rev{fill:var(--bg);stroke:var(--rev);stroke-width:1.5}.check{fill:var(--good)}
-</style></head><body><main><h1>Ripple teaches itself the task</h1>
-<p>Score per generation (share of milestones met, averaged over the runs). Filled dots were kept, hollow dots reverted, green diamonds are pass rates on unseen variants. Ripple's weights never change: only its SKILL.md does.</p>
+</style></head><body><main><h1>The model teaches itself the task</h1>
+<p>Score per generation (share of milestones met, averaged over the runs). Filled dots were kept, hollow dots reverted, green diamonds are pass rates on unseen variants. The model's weights never change: only its SKILL.md does.</p>
 ${tasks.map((t) => chart(t, rows.filter((r) => r.task === t))).join('\n') || '<p>The ledger is empty.</p>'}
 </main></body></html>`;
 }

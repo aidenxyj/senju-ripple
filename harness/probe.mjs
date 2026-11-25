@@ -1,10 +1,12 @@
-// Probe: raw requests to the Ripple endpoint, printed as-is.
+// Probe: raw requests to the model endpoint in .env (LLM_*), printed as-is.
 // Usage: node --env-file=.env harness/probe.mjs [plain|tool|reasoning|context <tokens>] [--provider <slug>]
 // Never prints the API key.
 
-const { RIPPLE_BASE_URL, RIPPLE_API_KEY, RIPPLE_MODEL } = process.env;
-if (!RIPPLE_BASE_URL || !RIPPLE_API_KEY) throw new Error('set RIPPLE_BASE_URL and RIPPLE_API_KEY in .env');
-const model = RIPPLE_MODEL || 'ricursiveai/ripple-65b-preview';
+import { llmSettings, missingSettings } from '../adapter/index.js';
+
+const settings = llmSettings(process.env);
+if (missingSettings(settings)) throw new Error(missingSettings(settings));
+const { baseUrl, apiKey, model } = settings;
 
 const args = process.argv.slice(2);
 const pIdx = args.indexOf('--provider');
@@ -14,9 +16,9 @@ const mode = args[0] || 'plain';
 async function call(body) {
   if (provider) body.provider = { order: [provider], allow_fallbacks: false };
   const t0 = Date.now();
-  const res = await fetch(`${RIPPLE_BASE_URL}/chat/completions`, {
+  const res = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${RIPPLE_API_KEY}`, 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
     body: JSON.stringify({ model, ...body }),
   });
   const json = await res.json().catch(() => ({}));

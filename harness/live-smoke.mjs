@@ -1,10 +1,10 @@
-// Live check: the real Swarm with Ripple answering every model call,
+// Live check: the real Swarm with the model in .env answering every call,
 // against the swarm engine's echo MCP server (same setup as app/test/smoke.mjs, minus the fake model).
 // Run: node --env-file=.env harness/live-smoke.mjs [--no-guard]
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeRippleStack, makeRippleSwarm } from './index.js';
+import { makeStack, makeSwarm } from './index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const echo = { command: process.execPath, args: [path.join(here, '../app/test/echo-server.mjs')], app: 'Finder' };
@@ -12,10 +12,10 @@ const echo = { command: process.execPath, args: [path.join(here, '../app/test/ec
 const calls = [];
 const guardEvents = [];
 const noGuard = process.argv.includes('--no-guard');
-const llm = await makeRippleStack({ guard: !noGuard, onCall: (c) => calls.push(c), onGuard: (e) => guardEvents.push(e) });
+const llm = await makeStack({ guard: !noGuard, onCall: (c) => calls.push(c), onGuard: (e) => guardEvents.push(e) });
 
 const events = [];
-const swarm = await makeRippleSwarm({
+const swarm = await makeSwarm({
   stack: llm,
   config: { maxSteps: 12, servers: { echo } },
   workspace: '/tmp',
@@ -30,12 +30,12 @@ await swarm.run('Use two workers in parallel. One shouts the word "hello" with t
 await swarm.shutdown();
 
 const done = events.find((e) => e.type === 'done');
-console.log(`\n${calls.length} Ripple calls in ${((Date.now() - t0) / 1000).toFixed(1)} s`, JSON.stringify(calls));
+console.log(`\n${calls.length} model calls in ${((Date.now() - t0) / 1000).toFixed(1)} s`, JSON.stringify(calls));
 // Plumbing (adapter/sched): must always hold.
 assert.ok(!events.some((e) => e.type === 'error'), 'no errors');
 assert.ok(done, 'swarm finished');
 assert.ok(calls.length > 0 && calls.every((c) => ['end_turn', 'tool_use'].includes(c.stop)), 'every call came back clean');
-// Behaviour (Ripple following the goal): reported, not enforced. guard/ and shell/ exist to raise this.
+// Behaviour (the model following the goal): reported, not enforced. guard/ and shell/ exist to raise this.
 const notes = events.filter((e) => e.type === 'board').map((e) => e.note).join(' ');
 const behaviour = {
   spawnedTwo: events.filter((e) => e.type === 'spawn').length >= 2,

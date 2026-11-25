@@ -2,7 +2,7 @@
 // real counts come back from the endpoint as `usage`. They lean high on purpose,
 // so a conversation that fits by this estimate also fits for real.
 
-// Fitted against Ripple's real usage.prompt_tokens on 13 samples of nine kinds of text
+// Fitted against one model's real usage.prompt_tokens (a 65B model with a ~100k BPE vocabulary) on 13 samples of nine kinds of text
 // (prose, code, JSON, raw Playwright snapshots, eyes/ output, page dumps and price
 // tables full of numbers). A flat chars/3.5 ran 15-30% low on snapshot-like text,
 // because digits and punctuation tokenize short. Per class: each run of whitespace
@@ -13,7 +13,7 @@ export const WEIGHTS = { word: 0, digit: 0.45, punct: 0.73, space: 1.14, wide: 1
 export const SAFETY = 1.2;
 export const CHARS_PER_TOKEN = 3.5;   // kept for callers that only need a rough char budget
 export const MIN_CHARS_PER_TOKEN = 5; // floor for long runs without spaces (ids, base64, URLs)
-export const IMAGE_TOKENS = 1600;     // one screenshot; adapter/ replaces images with text for Ripple anyway
+export const IMAGE_TOKENS = 1600;     // one screenshot; adapter/ replaces images with text unless LLM_VISION is on
 const MESSAGE_OVERHEAD = 4;           // role and message framing
 const BLOCK_OVERHEAD = 3;             // block type framing
 const ID_TOKENS = 8;                  // a tool_use id such as toolu_01AbC...

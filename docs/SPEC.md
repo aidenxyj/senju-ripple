@@ -1,19 +1,21 @@
-# Senju on Ripple: architecture
+# Senju: architecture
 
-This describes what Senju on Ripple is and the contracts between its folders.
+This describes what Senju is and the contracts between its folders.
 
 ## What it is
 
-Senju is a swarm of computer-use agents for the Mac. You type a goal, a lead agent plans it, and several workers each drive a browser window or a Mac app with their own visible cursor while you keep working. Every agent runs on Ripple-65B Preview.
+Senju is a swarm of computer-use agents for the Mac. You type a goal, a lead agent plans it, and several workers each drive a browser window or a Mac app with their own visible cursor while you keep working. Every agent runs on whatever model you point it at: any OpenAI-compatible chat completions endpoint, hosted or self-run.
 
 ## Why it needs a harness
 
-| Ripple | What the harness does about it |
+The harness assumes as little as possible about the model, so a small open model and a frontier API both work:
+
+| Assumption it avoids | What the harness does instead |
 |---|---|
-| Text only, no screenshots | `eyes/` turns screens into short text with stable element ids |
-| Trained for terminal work: commands in, text out | Workers act through one `sh` tool running `senju` commands (`shell/`) |
-| Context depends on the host; some endpoints cap far below 1M | `context/` fits every request to a token budget |
-| Lightly post-trained, so it follows written rules less reliably | `guard/` enforces the important rules in code |
+| The model can see | `eyes/` turns screens into short text with stable element ids (vision models can get images too, with `LLM_VISION=1`) |
+| The model is good with many raw tools | Workers act through one `sh` tool running `senju` commands (`shell/`) |
+| The endpoint has a big context window | `context/` fits every request to a token budget |
+| The model follows written rules reliably | `guard/` enforces the important rules in code |
 
 ## The parts
 
@@ -21,22 +23,22 @@ Senju is a swarm of computer-use agents for the Mac. You type a goal, a lead age
 goal ─> lead ─> workers ──sh tool──> shell/ ──> guard/ ──> MCP tools (browser, files, Mac apps)
            \        ^                                          |
             \       └────────── eyes/ (screen as text) <───────┘
-             └─ every model call ─> context/ ─> sched/ ─> adapter/ ─> Ripple endpoint
+             └─ every model call ─> context/ ─> sched/ ─> adapter/ ─> your model endpoint
 ```
 
 | Folder | What it does |
 |---|---|
-| `app/` | The desktop app (overlay, cursors, approval cards) and the swarm engine (`app/src/orchestrator.js`: lead, workers, board, skills). `main.js` runs the swarm on Ripple through `src/llm.js` (which wraps `adapter/`), with visible-cursor handling for popups, ads, on-screen keys and desktop apps. Also a launcher with saved sessions, and team mode (`server/`, `web/`, see `app/MULTIPLAYER.md`). `harness/` builds the same engine with the `senju` shell for evals. |
-| `adapter/` | Speaks to Ripple through an OpenAI-style endpoint, in the Messages-style shape the swarm engine expects. |
+| `app/` | The desktop app (overlay, cursors, approval cards) and the swarm engine (`app/src/orchestrator.js`: lead, workers, board, skills). `main.js` runs the swarm on the configured model through `src/llm.js` (which wraps `adapter/`), with visible-cursor handling for popups, ads, on-screen keys and desktop apps. Also a launcher with saved sessions, and team mode (`server/`, `web/`, see `app/MULTIPLAYER.md`). `harness/` builds the same engine with the `senju` shell for evals. |
+| `adapter/` | Speaks to any OpenAI-compatible endpoint, in the Messages-style shape the swarm engine expects. |
 | `eyes/` | Turns a page or app window into short text with stable element IDs. |
 | `shell/` | The `senju` command line that workers act through. |
 | `guard/` | Checks every action before it runs. Repairs bad calls, stops loops, asks before sends. |
 | `context/` | Keeps each conversation inside the endpoint's context limit. |
 | `sched/` | Limits how many model calls run at once. |
 | `harness/` | Wires the parts above into the swarm engine's `Swarm`. |
-| `evals/` | Fixed tasks with automatic checkers, run on Ripple, plus the autoresearch loop. |
-| `docs/` | This file, Ripple endpoint notes and a computer-use benchmark survey. |
-| `tools/` | Scripts to serve Ripple on your own GPU (Modal or Vast). |
+| `evals/` | Fixed tasks with automatic checkers, run on any model, plus the autoresearch loop. |
+| `docs/` | This file, notes on OpenAI-style endpoints and a computer-use benchmark survey. |
+| `tools/` | Optional scripts to serve an open model with vLLM on a rented GPU (Modal or Vast). |
 
 ## Contracts
 
@@ -45,19 +47,22 @@ These are the shapes other folders rely on.
 ### adapter/
 
 ```js
-makeRippleLlm({ baseUrl, apiKey, model, maxContext }) -> { create(params, { signal }) }
+makeLlm({ baseUrl, apiKey, model, maxContext, vision }) -> { create(params, { signal }) }
+llmFromEnv(env) -> the same, from LLM_* settings
 ```
 
 `create` takes and returns the Messages-style shapes the swarm engine speaks, so the orchestrator needs no changes:
 
 - **In:** `{ model, max_tokens, system, messages, tools }`. Messages hold `text`, `tool_use { id, name, input }` and `tool_result { tool_use_id, content, is_error }` blocks. Tools are `{ name, description, input_schema }`.
 - **Out:** `{ content: [text | tool_use blocks], stop_reason, usage: { input_tokens, output_tokens } }` with `stop_reason` one of `end_turn`, `tool_use`, `max_tokens`, `model_context_window_exceeded`.
-- Drops fields Ripple does not understand (`betas`, `context_management`, `cache_control`).
-- Replaces any image in a tool result with the text `[image omitted]`.
+- Drops vendor-specific fields (`betas`, `context_management`, `cache_control`, `thinking`).
+- Replaces any image in a tool result with the text `[image omitted]`, unless `vision` is on: then images follow as `image_url` parts.
+- Sends no `authorization` header when there is no key (local servers).
+- Switches to `max_completion_tokens` for endpoints that refuse `max_tokens`.
 - Strips the model's reasoning from what it returns.
 - Rejects with an error when `signal` aborts.
 - Tool arguments that are not valid JSON come back as `tool_use` with `input: { _raw: "<the string>" }`, for `guard.repair` to fix.
-- Talks to one vLLM server on a Vast B200, so it sends no `provider` routing (see `docs/ripple-notes.md`).
+- Sends no `provider` routing unless given one (see `docs/model-notes.md`).
 
 ### eyes/
 
@@ -136,33 +141,34 @@ export default { id, goal, setup(), check() -> { pass, detail } }
 ```
 
 ```sh
-npm run eval -- --model ripple
+npm run eval -- --model llm
 ```
 
 Each run writes `evals/results/<run>.json` with one row per task: `{ task, model, pass, steps, tokens, seconds, invalidCalls }`. Tasks use local test pages and a scratch folder, never real accounts.
 
 ## Settings
 
-Put these in a `.env` file in the repo root (copy `.env.example`). It is git-ignored. Never commit a key. Ripple runs on a Vast.ai B200 with vLLM (`tools/vast/`), whose `env` command fills in the address.
+Put these in a `.env` file in the repo root (copy `.env.example`). It is git-ignored. Never commit a key. The desktop app can also save them from its model settings form.
 
 ```
-RIPPLE_BASE_URL=       # http://<vast-ip>:<port>/v1, the B200's vLLM server
-RIPPLE_API_KEY=        # the key that server was started with (any long random string)
-RIPPLE_MODEL=ricursiveai/ripple-65b-preview
-RIPPLE_MAX_CONTEXT=131072   # vLLM's --max-model-len
+LLM_BASE_URL=          # the base URL of any OpenAI-compatible endpoint (usually ends in /v1)
+LLM_MODEL=             # the model name that endpoint expects
+LLM_API_KEY=           # optional for local servers
+LLM_MAX_CONTEXT=       # optional: the endpoint's context limit, so oversized requests fail fast
+LLM_VISION=            # optional: 1 sends images in tool results to the model
 ```
 
 ## Conventions
 
 - JavaScript, ES modules, Node 20 or newer.
-- Text only. Never send Ripple an image.
+- Text first: the harness never depends on images. Send them only when `LLM_VISION` is on.
 - No real accounts in tests or evals.
 
 ## Running the app
 
 ```sh
 cd app && npm install      # the app, the swarm engine and its MCP servers
-npm start                 # reads RIPPLE_* from .env
+npm start                 # reads LLM_* from .env, or the settings saved in the app
 npm run demo              # scripted agents, no key, to check the overlay
 ```
 

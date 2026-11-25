@@ -131,14 +131,15 @@ const config = { model: 'fake', maxAgents: 2, maxSteps: 4, servers: {} };
   const store = new MemoryStore();
   store.addTeam('t1', 'Robotics');
   const tokens = { james: store.addUser('james', 'James', 't1'), linda: store.addUser('linda', 'Linda', 't1'), mona: store.addUser('mona', 'Mona', 't1') };
-  await store.setKey('james', 'sk-james');
-  await store.setKey('linda', 'sk-linda');
+  await store.setModel('james', { baseUrl: 'http://127.0.0.1:1/v1', model: 'fake', apiKey: 'sk-james' });
+  await store.setModel('linda', { baseUrl: 'http://127.0.0.1:1/v1', model: 'fake', apiKey: 'sk-linda' });
   const leadSaw = [];
   const keys = [];
-  const makeLlm = (key) => ({
+  const makeLlm = (settings) => ({
+    model: settings.model,
     async create(params) {
       await sleep(5);
-      keys.push(key);
+      keys.push(settings.apiKey);
       const isLead = params.tools?.[0]?.name === 'spawn_agent';
       if (!isLead) return { content: [say('typed it')], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } };
       leadSaw.push(params.messages.map(textOf).join('\n---\n'));

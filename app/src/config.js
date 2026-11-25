@@ -34,7 +34,7 @@ export function loadConfig() {
 
 // Folder the agents share for files. Created on first run.
 // Where team mode connects unless swarm.config.json names another server under "cloud".
-// The Ripple team server (see fly.toml).
+// The project's hosted team server (see fly.toml). Point "cloud" at your own to self-host.
 export const DEFAULT_HUB = 'https://senju-ripple-hub.fly.dev';
 
 export function ensureWorkspace() {

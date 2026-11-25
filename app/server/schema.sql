@@ -48,7 +48,8 @@ create table if not exists devices (
   last_seen timestamptz not null default now()
 );
 
--- Each person's own model API key, encrypted by the server before it is stored.
+-- Each person's own model settings, encrypted by the server before they are stored. api_key_enc holds
+-- JSON { baseUrl, model, apiKey } (any OpenAI-compatible endpoint); rows from before hold a bare API key.
 -- Row level security is on with no policies: only the server (service role) can touch it.
 create table if not exists user_secrets (
   user_id uuid primary key references profiles on delete cascade,
@@ -80,10 +81,10 @@ create table if not exists messages (
 );
 
 -- ---- Plan and credits -----------------------------------------------------------------------
--- Someone without their own API key runs sessions on the server's key and pays in credits.
+-- Someone without their own model settings runs sessions on the server's model and pays in credits.
 -- Amounts are micro-dollars: 1,000,000 = $1.00. Only the server changes these tables.
 
-alter table sessions add column if not exists billing text;        -- 'own_key' or 'hosted'
+alter table sessions add column if not exists billing text;        -- 'own_key' (their own model settings) or 'hosted'
 alter table sessions add column if not exists cost_micro bigint;   -- what a hosted session was charged
 
 create table if not exists billing_accounts (

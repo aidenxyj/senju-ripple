@@ -2,7 +2,7 @@
 // to people's computers and browsers over WebSocket.
 //
 //   desktop app (a "device") --ws-->  hub  <--ws-- web app
-//        lends its tools                |   runs the Swarm with the session owner's API key
+//        lends its tools                |   runs the Swarm on the session owner's model settings
 //        shows cursors and cards        |   keeps accounts, memory and history in the store
 //
 // A tool server on a computer appears to the swarm as "<server>@<computer>". Calling it
@@ -30,14 +30,16 @@ const TYPED = /type|set_value|fill/;
 export class Hub {
   /**
    * @param {object} o
-   * @param {object} o.store      accounts, teams, keys, memory, history (see store-memory.js for the shape)
-   * @param {(apiKey: string) => {create: Function}} o.makeLlm
+   * @param {object} o.store      accounts, teams, model settings, memory, history (see store-memory.js for the shape)
+   * @param {(settings: {baseUrl?: string, model?: string, apiKey?: string}) => {create: Function, model?: string}} o.makeLlm
+   *                              builds a client for any OpenAI-compatible endpoint; may throw if the settings are incomplete
+   * @param {object} [o.hosted]   the server's own model settings ({ baseUrl, model, apiKey }), sold in credits
    * @param {object} o.config     swarm settings: model, maxAgents, maxSteps, context, tokenBudget
    * @param {string} [o.traceDir]
    */
-  // hostedKey and pricing are set when the server sells hosted sessions; without them everyone brings a key.
-  constructor({ store, makeLlm, config, traceDir = null, log = () => {}, hostedKey = null, pricing = null }) {
-    this.hostedKey = pricing ? hostedKey : null;
+  // hosted and pricing are set when the server sells sessions on its own model; without them everyone brings their own.
+  constructor({ store, makeLlm, config, traceDir = null, log = () => {}, hosted = null, pricing = null }) {
+    this.hosted = pricing && hosted?.baseUrl && hosted?.model ? hosted : null;
     this.pricing = pricing;
     this.store = store;
     this.makeLlm = makeLlm;
@@ -225,16 +227,22 @@ export class Hub {
       prior = await this.store.getSession(continueId);
       if (!prior || prior.teamId !== team.id) return this.send(client, { t: 'error', code: 'no_session', message: 'That session is not in your team.' });
     }
-    // Whoever starts the session pays for it: with their own key if they saved one, otherwise from their credits.
-    let key = await this.store.getKey(client.user.id);
+    // Whoever starts the session pays for it: on their own model if they saved one, otherwise from their credits.
+    let settings = await this.store.getModel(client.user.id);
     let hosted = false;
-    if (!key) {
-      if (!this.hostedKey) return this.send(client, { t: 'error', code: 'no_key', message: 'Add your Ripple API key in the web app first. A session runs on the key of whoever starts it.' });
+    if (!settings) {
+      if (!this.hosted) return this.send(client, { t: 'error', code: 'no_model', message: 'Add your model settings in the web app first (any OpenAI-compatible endpoint). A session runs on the model of whoever starts it.' });
       const account = await this.store.getBilling(client.user.id);
-      if (!isActive(account.status)) return this.send(client, { t: 'error', code: 'no_plan', message: 'Hosted sessions need a subscription. Subscribe in the web app, or save your own Ripplepic key there to run for free.' });
+      if (!isActive(account.status)) return this.send(client, { t: 'error', code: 'no_plan', message: 'Sessions on this server\'s model need a subscription. Subscribe in the web app, or save your own model settings there to run for free.' });
       if (account.credits < this.pricing.minStartMicro) return this.send(client, { t: 'error', code: 'no_credits', message: `You have ${dollars(Math.max(0, account.credits))} of credits left, which is not enough to start. Add credits in the web app.` });
-      key = this.hostedKey;
+      settings = this.hosted;
       hosted = true;
+    }
+    let llm;
+    try { llm = this.makeLlm(settings); }
+    catch (err) {
+      this.log('model settings', client.user.id, err?.message ?? err);
+      return this.send(client, { t: 'error', code: 'no_model', message: 'Your saved model settings are incomplete (they need a base URL and a model name). Save them again in the web app.' });
     }
 
     const s = {
@@ -253,9 +261,9 @@ export class Hub {
       billing: hosted ? { cost: 0, charged: 0, n: 0, out: false, chain: Promise.resolve() } : null,
     };
     const store = this.store;
-    const config = { ...this.config, servers: {} };
+    const config = { ...this.config, servers: {}, ...(llm.model ? { model: llm.model, plannerModel: llm.model } : {}) };
     s.swarm = new Swarm({
-      llm: this.makeLlm(key),
+      llm,
       config,
       workspace: '~/Senju on each computer',
       emit: (event) => this.event(s, event),

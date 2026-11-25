@@ -13,7 +13,7 @@
 // Each generation appends a row to research/ledger.jsonl and a line to the skill's HISTORY.md.
 // Episodes go to evals/results/research/<task>/<run>/<n>-seed<s>/{transcript.md, calls.jsonl, row.json}.
 //
-// Other options: --model ripple|stub|noop (default ripple), --skill <dir>, --no-skill (raw baseline),
+// Other options: --model llm|stub|noop (default llm), --skill <dir>, --no-skill (raw baseline),
 // --export [--to <dir>] (write the skill as <task>.md into app/skills/, the app's skills folder),
 // --seeds train|unseen|1,2,3, --timeout <s>, --no-guard, --context-budget <tokens> (default 32000, as in app/),
 // --no-shell (raw MCP tools instead of the senju shell), --decline (answer every confirm card with Decline), --ledger <file>, --runs <dir>, --init (create the skill folder only).
@@ -104,7 +104,7 @@ const firstMissed = (row) => {
 };
 
 export async function runGeneration({
-  task: taskId, k = 6, concurrency = 3, seeds = 'train', model = 'ripple', label = '', skillDir, noSkill = false,
+  task: taskId, k = 6, concurrency = 3, seeds = 'train', model = 'llm', label = '', skillDir, noSkill = false,
   timeout, guard, ledger = LEDGER, runs = RUNS, revert = true, contextBudget = 32000, shell = true, answer = 'approve', log = console.log,
 } = {}) {
   const [task] = await loadTasks([taskId]);
@@ -208,7 +208,7 @@ export function status({ task, ledger = LEDGER, log = console.log } = {}) {
 }
 
 function parseArgs(argv) {
-  const o = { task: null, k: 6, concurrency: 3, seeds: 'train', model: 'ripple', label: '', revert: true };
+  const o = { task: null, k: 6, concurrency: 3, seeds: 'train', model: 'llm', label: '', revert: true };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); return argv[++i]; };

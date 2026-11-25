@@ -1,10 +1,10 @@
-// Live check: Ripple workers drive a real (headless) browser through the senju shell.
-// Runs eval tasks through makeRippleSwarm({ shell: true }) and auto-answers the person's prompts.
+// Live check: workers on the model in .env drive a real (headless) browser through the senju shell.
+// Runs eval tasks through makeSwarm({ shell: true }) and auto-answers the person's prompts.
 // Run: node --env-file=.env harness/live-shell.mjs [--task web-form] [--suite core|hard|games] [--decline] [--no-guard] [--headed] [--verbose]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { makeRippleStack, makeRippleSwarm } from './index.js';
+import { makeStack, makeSwarm } from './index.js';
 import { loadTasks } from '../evals/run.mjs';
 import { pickServers } from '../evals/lib/servers.mjs';
 
@@ -30,8 +30,8 @@ for (const task of tasks) {
 const goal = goalText.replace(/\{(\w+)\}/g, (m, k) => (ctx[k] ?? m));
   const calls = [], guardEvents = [], asks = [], sh = [];
   const verbose = process.argv.includes('--verbose');
-  const { rippleFromEnv } = await import('../adapter/index.js');
-  const base = rippleFromEnv();
+  const { llmFromEnv } = await import('../adapter/index.js');
+  const base = llmFromEnv();
   const llm = !verbose ? base : { async create(params, opts) {
     const res = await base.create(params, opts);
     const who = params.tools?.some((t) => t.name === 'spawn_agent') ? 'lead' : 'worker';
@@ -41,10 +41,10 @@ const goal = goalText.replace(/\{(\w+)\}/g, (m, k) => (ctx[k] ?? m));
     for (const b of res.content) console.log(`  -> ${who}: ${b.type === 'text' ? 'say ' + JSON.stringify(b.text.slice(0, 160)) : b.name + ' ' + JSON.stringify(b.input).slice(0, 200)}`);
     return res;
   } };
-  const stack = await makeRippleStack({ llm, guard: !process.argv.includes('--no-guard'), onCall: (c) => calls.push(c), onGuard: (e) => { guardEvents.push(e); if (verbose) console.log('  [guard]', JSON.stringify(e).slice(0, 300)); } });
+  const stack = await makeStack({ llm, guard: !process.argv.includes('--no-guard'), onCall: (c) => calls.push(c), onGuard: (e) => { guardEvents.push(e); if (verbose) console.log('  [guard]', JSON.stringify(e).slice(0, 300)); } });
   let swarm;
   const t0 = Date.now();
-  swarm = await makeRippleSwarm({
+  swarm = await makeSwarm({
     stack, shell: true, workspace,
     config: { maxSteps: 40, servers: serversFor(task.servers ?? []) },
     emit: (e) => {

@@ -1,19 +1,19 @@
-// How fast is a Ripple endpoint for Senju's kind of call? Times a realistic worker turn (system prompt, a page
+// How fast is an LLM endpoint for Senju's kind of call? Times a realistic worker turn (system prompt, a page
 // snapshot, the sh tool; the model answers with one tool call), one at a time and then 4 at once like 4 bots.
-//   node --env-file=.env        tools/modal/bench.mjs        # the Vast B200 in .env
+//   node --env-file=.env        tools/modal/bench.mjs        # whatever endpoint .env points at
 //   node --env-file=.env.modal  tools/modal/bench.mjs        # the Modal endpoint
 // A cold Modal endpoint takes minutes to start: the first call is reported separately and not counted.
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const { rippleFromEnv } = await import(`${ROOT}/adapter/index.js`);
-const llm = rippleFromEnv();
+const { llmFromEnv, llmSettings } = await import(`${ROOT}/adapter/index.js`);
+const llm = llmFromEnv();
 const N = Number(process.env.BENCH_N ?? 6);
 
 const snapshot = Array.from({ length: 60 }, (_, i) => `e${i + 1} ${['button', 'link', 'textbox', 'text'][i % 4]} "${['Host a room', 'Rules, tips & FAQ', 'Your answer', 'Category 2: Name a type of tree', 'Senju BOT B IS UP'][i % 5]} ${i}"`).join('\n');
 const params = () => ({
-  model: process.env.RIPPLE_MODEL,
+  model: llmSettings().model,
   max_tokens: 1024,
   system: [{ type: 'text', text: 'You are "Senju BOT A", a worker in a swarm. You act on a web page only through the sh tool, which runs senju commands (senju look, senju click <id>, senju type <id> "text" [--submit], senju wait 2s). Answer with one sh call.\n'.repeat(6) }],
   tools: [{ name: 'browser__sh', description: 'Run senju commands, one per line.', input_schema: { type: 'object', properties: { cmd: { type: 'string' } }, required: ['cmd'] } }],
@@ -32,7 +32,7 @@ async function once() {
 }
 const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 
-console.log(`endpoint: ${process.env.RIPPLE_BASE_URL?.replace(/\/\/([^/]+).*/, '//$1')}  model: ${process.env.RIPPLE_MODEL}`);
+console.log(`endpoint: ${llmSettings().baseUrl?.replace(/\/\/([^/]+).*/, '//$1')}  model: ${llmSettings().model}`);
 const warm = await once();
 console.log(`first call (includes any cold start): ${warm.ms} ms, ${warm.inTok} tokens in, ${warm.outTok} out -> ${warm.cmd.slice(0, 60)}`);
 const seq = [];

@@ -1,6 +1,6 @@
 // repair(call, schema) -> { call } | { error }
 //
-// Ripple sends tool arguments as a JSON string (docs/ripple-notes.md). When adapter/ cannot parse that string,
+// OpenAI-style endpoints send tool arguments as a JSON string (docs/model-notes.md). When adapter/ cannot parse that string,
 // it passes the call on as { name, input: { _raw: "<the string>" } }. repair turns it back into a valid call:
 // it fixes the usual JSON slips, then checks the result against the tool's input_schema and coerces what is
 // safe to coerce ("3" -> 3 for a number, "true" -> true for a boolean). The error text is written for the

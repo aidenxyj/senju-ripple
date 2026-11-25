@@ -16,7 +16,7 @@ async function call(name, ...args) {
 // ---- State ----
 const app = {
   s: null,                 // the main process's state (mode, account, running…)
-  view: 'loading',         // choose | key | signin | home
+  view: 'loading',         // choose | settings | signin | home
   panel: 'new',            // new | session | library
   selected: null,          // session id
   sessions: [],
@@ -24,6 +24,7 @@ const app = {
   tv: null,                // the trace view on screen
   libTab: 'skills',
   error: '',
+  settingsBack: 'choose',  // where the model settings screen's Back button goes
 };
 
 async function refreshState() { app.s = await call('state'); return app.s; }
@@ -38,7 +39,7 @@ async function boot() {
 function route() {
   const s = app.s;
   if (!s.mode) app.view = 'choose';
-  else if (!s.team && !s.hasKey) app.view = 'key';
+  else if (!s.team && !s.hasSettings) { app.view = 'settings'; app.settingsBack = 'choose'; }
   else if (s.team && s.account?.state !== 'signed_in') app.view = 'signin';
   else app.view = 'home';
   render();
@@ -49,7 +50,7 @@ function render() {
   document.body.dataset.view = app.view;
   if (app.view === 'loading') return $app.replaceChildren();
   if (app.view === 'choose') return $app.replaceChildren(chooseScreen());
-  if (app.view === 'key') return $app.replaceChildren(keyScreen());
+  if (app.view === 'settings') return $app.replaceChildren(settingsScreen());
   if (app.view === 'signin') return $app.replaceChildren(signinScreen());
   return $app.replaceChildren(homeScreen());
 }
@@ -70,27 +71,44 @@ function chooseScreen() {
       h('h1', { class: 'display hero-title' }, h('span', { class: 'hash' }, '#'), 'Swarm', h('br'), 'your', h('br'), 'screen'),
       sticker(), scribbleArrow()),
     h('section', { class: 'choices' },
-      card('local', 'Personal', 'On this Mac', ['Your own API key', 'Your sessions stay on this Mac', 'Agents use your apps and browser'], 'Start personal'),
+      card('local', 'Personal', 'On this Mac', ['Any model: a hosted API or your own server', 'Your sessions stay on this Mac', 'Agents use your apps and browser'], 'Start personal'),
       card('team', 'Team', 'With your team', ['Sign in to your team', 'Share sessions, skills and memory', 'Agents can work across teammates’ Macs'], app.s.demo ? 'Not in demo' : 'Sign in to team')),
     app.error ? h('p', { class: 'stage-error' }, app.error) : null,
-    h('p', { class: 'stage-foot' }, 'You can switch any time from the ◎ menu bar icon.'));
+    h('p', { class: 'stage-foot' }, 'You can switch any time from the ◎ menu bar icon. ',
+      app.s.demo ? null : h('button', { class: 'link light', onclick: () => openSettings('choose') }, 'Model settings')));
 }
 
-function keyScreen() {
-  const input = h('input', { class: 'field', type: 'password', placeholder: 'B200 server key', autofocus: true });
+// The model for personal sessions: any OpenAI-compatible chat completions endpoint.
+function openSettings(from) {
+  app.settingsBack = from;
+  app.view = 'settings';
+  render();
+}
+
+function settingsScreen() {
+  const now = app.s.settings ?? {};
+  const baseUrl = h('input', { class: 'field', type: 'url', placeholder: 'Base URL of an OpenAI-compatible endpoint', value: now.baseUrl ?? '', spellcheck: 'false' });
+  const model = h('input', { class: 'field', type: 'text', placeholder: 'Model name', value: now.model ?? '', spellcheck: 'false' });
+  const apiKey = h('input', { class: 'field', type: 'password', autocomplete: 'off',
+    placeholder: now.hasKey ? 'API key (leave blank to keep the saved one)' : 'API key (local servers need none)' });
   const err = h('p', { class: 'error-text' });
   const save = async () => {
-    try { app.s = await call('saveKey', input.value); route(); } catch (e) { err.textContent = e.message; }
+    err.textContent = '';
+    try {
+      app.s = await call('saveSettings', { baseUrl: baseUrl.value, model: model.value, apiKey: apiKey.value });
+      if (app.settingsBack === 'home' && app.s.mode) { app.view = 'home'; render(); loadSessions(); } else route();
+    } catch (e) { err.textContent = e.message; }
   };
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  for (const input of [baseUrl, model, apiKey]) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  const back = () => { if (app.settingsBack === 'home' && app.s.hasSettings) { app.view = 'home'; render(); loadSessions(); } else { app.view = 'choose'; render(); } };
   return h('main', { class: 'stage centered' },
     h('header', { class: 'top drag' }, h('span', { class: 'logo display' }, 'Senju')),
     h('div', { class: 'panel-card' },
       h('div', { class: 'choice-kicker' }, 'Personal'),
-      h('h2', { class: 'display card-title' }, 'Your Ripple API key'),
-      h('p', { class: 'dim' }, 'Personal sessions run on your own Ripple B200 (Vast.ai); paste the key its vLLM server was started with. It is stored encrypted in this Mac’s keychain and never leaves it.'),
-      input, err,
-      h('div', { class: 'row' }, h('button', { class: 'btn btn-ghost', onclick: () => back() }, '← Back'), h('button', { class: 'btn btn-punk', onclick: save }, 'Save key'))));
+      h('h2', { class: 'display card-title' }, 'Choose a model'),
+      h('p', { class: 'dim' }, 'Personal sessions run on any OpenAI-compatible endpoint: a hosted API or a server you run yourself. The API key is stored encrypted in this Mac’s keychain and only sent to that endpoint.'),
+      baseUrl, model, apiKey, err,
+      h('div', { class: 'row' }, h('button', { class: 'btn btn-ghost', onclick: back }, '← Back'), h('button', { class: 'btn btn-punk', onclick: save }, 'Save'))));
 }
 
 function signinScreen() {
@@ -172,6 +190,7 @@ function homeScreen() {
       h('div', { class: 'side-account' },
         h('span', {}, s.team ? (s.account?.user?.name ?? '') : 'On this Mac'),
         h('button', { class: 'link light', onclick: () => switchMode() }, s.team ? 'Switch to personal' : 'Switch to team'),
+        !s.team && !s.demo ? h('button', { class: 'link light', onclick: () => openSettings('home') }, 'Model settings') : null,
         s.team ? h('button', { class: 'link light', onclick: async () => { await call('signOut'); } }, 'Sign out') : null)));
   let main;
   if (app.panel === 'library') main = libraryPanel();

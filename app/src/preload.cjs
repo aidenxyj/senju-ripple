@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('swarm', {
   join: () => ipcRenderer.send('team:join'),
   leave: () => ipcRenderer.send('team:leave'),
   setMode: (mode) => ipcRenderer.send('app:mode', mode),
-  saveKey: (key) => ipcRenderer.send('solo:key', key),
+  saveSettings: (settings) => ipcRenderer.send('solo:settings', settings),
   setInteractive: (on) => ipcRenderer.send('overlay:interactive', on),
   openApp: () => ipcRenderer.send('app:open-launcher'),
   onEvent: (fn) => ipcRenderer.on('swarm:event', (_e, event) => fn(event)),

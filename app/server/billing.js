@@ -1,9 +1,9 @@
 // Paying for hosted sessions.
 //
-// A person either saves their own Ripple API key (free) or uses the hosted key. Hosted use needs an
-// active subscription. Each paid invoice adds the plan's credits to their balance, they can buy
+// A person either saves their own model settings (free) or runs on the server's model (LLM_* settings). That needs
+// an active subscription. Each paid invoice adds the plan's credits to their balance, they can buy
 // more, and every hosted session they start is charged for the tokens it used. A session stops
-// when its owner's balance reaches zero, so the hosted key never runs unpaid.
+// when its owner's balance reaches zero, so the server's model never runs unpaid.
 //
 // Money is counted in micro-dollars (1,000,000 = $1.00) so that small token costs are not rounded away.
 // Stripe is called over plain HTTPS with no library: three calls and one signature check.
@@ -12,9 +12,10 @@ import crypto from 'node:crypto';
 export const MICRO = 1_000_000;
 const num = (v, fallback) => (Number.isFinite(Number(v)) && v !== '' && v != null ? Number(v) : fallback);
 
-// What we charge is what the model costs us, times a markup. Rates are dollars per million tokens.
-// Per-token rates charged for hosted sessions ($0.10 in, $0.30 out per million by default). On a Vast B200 you pay
-// by the hour (about $7.50 to $12.50), so set these from your own hourly cost and traffic.
+// What we charge is what the model costs us, times a markup. Rates are dollars per million tokens, set from env
+// (SENJU_RATE_INPUT, SENJU_RATE_OUTPUT, SENJU_RATE_CACHE_READ, SENJU_RATE_CACHE_WRITE). The defaults ($0.10 in,
+// $0.30 out) are placeholders: set them to your provider's price list, or, for a server you rent by the hour,
+// from that hourly cost and your traffic.
 export function pricing(env = process.env) {
   return {
     input: num(env.SENJU_RATE_INPUT, 0.1),
@@ -89,10 +90,10 @@ export class Billing {
   }
 
   // What the web app shows.
-  async summary(userId, { hasOwnKey = false, hosted = false } = {}) {
+  async summary(userId, { hasOwnModel = false, hosted = false } = {}) {
     const b = await this.store.getBilling(userId);
     return {
-      hosted, payments: this.enabled, hasOwnKey,
+      hosted, payments: this.enabled, hasOwnModel,
       status: b.status ?? 'none', active: isActive(b.status), periodEnd: b.periodEnd ?? null,
       credits: b.credits, creditsText: dollars(b.credits),
       plan: { usd: this.p.planUsd, creditsUsd: this.p.planCreditsUsd }, topups: this.p.topups, markup: this.p.markup,

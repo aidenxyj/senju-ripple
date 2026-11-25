@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { slug } from '../src/skills.js';
+import { parseSaved, serialize } from './models.js';
 
 const ok = ({ data, error }) => { if (error) throw new Error(error.message); return data; };
 
@@ -35,7 +36,8 @@ export class SupabaseStore {
     ok(await this.db.from('devices').upsert({ id, user_id: userId, team_id: teamId, name, platform, last_seen: new Date().toISOString() }));
   }
 
-  // ---- API keys: AES-256-GCM, so the database never holds a usable key ---------------------
+  // ---- Model settings: AES-256-GCM, so the database never holds a usable key ---------------------
+  // Stored as JSON { baseUrl, model, apiKey } in api_key_enc. Older rows hold a bare key; parseSaved reads both.
   encrypt(text) {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', this.key, iv);
@@ -48,14 +50,14 @@ export class SupabaseStore {
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(body), decipher.final()]).toString('utf8');
   }
-  async getKey(userId) {
+  async getModel(userId) {
     const row = ok(await this.db.from('user_secrets').select('api_key_enc').eq('user_id', userId).maybeSingle());
-    return row ? this.decrypt(row.api_key_enc) : null;
+    return row ? parseSaved(this.decrypt(row.api_key_enc)) : null;
   }
-  async setKey(userId, key) {
-    ok(await this.db.from('user_secrets').upsert({ user_id: userId, api_key_enc: this.encrypt(key), updated_at: new Date().toISOString() }));
+  async setModel(userId, settings) {
+    ok(await this.db.from('user_secrets').upsert({ user_id: userId, api_key_enc: this.encrypt(serialize(settings)), updated_at: new Date().toISOString() }));
   }
-  async deleteKey(userId) { ok(await this.db.from('user_secrets').delete().eq('user_id', userId)); }
+  async deleteModel(userId) { ok(await this.db.from('user_secrets').delete().eq('user_id', userId)); }
 
   // ---- Sessions and chat ----------------------------------------------------------------------
   async createSession({ id, teamId, ownerId, goal }) {

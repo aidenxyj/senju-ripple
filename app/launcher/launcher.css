@@ -16,7 +16,7 @@ button { font: inherit; }
 .kbd.on-punk { border-color: rgba(20, 20, 20, 0.35); color: var(--ink); margin-left: 2px; }
 .mono { font-family: var(--mono); font-size: 13px; }
 
-/* ---- Stage screens (choose, key, sign in) ---- */
+/* ---- Stage screens (choose, model settings, sign in) ---- */
 .stage.choose, .stage.centered { height: 100%; overflow: auto; position: relative; padding: 0 56px 40px; display: flex; flex-direction: column; }
 .top { height: 64px; display: flex; align-items: center; justify-content: space-between; padding-left: 64px; flex: none; }
 .logo { font-size: 22px; color: var(--white); }

@@ -1,6 +1,4 @@
 {
-  "model": "ricursiveai/ripple-65b-preview",
-  "plannerModel": "ricursiveai/ripple-65b-preview",
   "maxAgents": 100,
   "maxSteps": 300,
   "tokenBudget": 40000000,

@@ -1,6 +1,6 @@
 # guard/
 
-Checks every action before it runs, and keeps Ripple's replies inside the rules that matter. Contract: `docs/SPEC.md`, "guard/".
+Checks every action before it runs, and keeps the model's replies inside the rules that matter. Contract: `docs/SPEC.md`, "guard/".
 
 ```js
 import { check, record, repair, guardLlm, createGuard } from '../guard/index.js';
@@ -65,7 +65,7 @@ Anything else is an `{ error }` that shows the expected shape, such as `missing 
 ## guardLlm: turn rules
 
 ```js
-const llm = guardLlm(makeRippleLlm({...}), { maxRetries: 2, leadMustSpawn: true, workerMustAct: true, workerMustPost: true, onEvent });
+const llm = guardLlm(makeLlm({...}), { maxRetries: 2, leadMustSpawn: true, workerMustAct: true, workerMustPost: true, onEvent });
 ```
 
 Every reply goes through these steps before the Swarm sees it:

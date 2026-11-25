@@ -4,12 +4,13 @@
 import { h, sticker, scribbleArrow } from './shared/brand.js';
 import { createTraceView } from './shared/trace-view.js';
 import { renderLibrary } from './shared/library-view.js';
+import { checkSettings } from './shared/model-settings.js';
 
 const app = document.getElementById('app');
 const state = {
   sb: null, user: null, token: null, name: '',
   team: null,            // from /api/team
-  hasKey: false, billing: null,
+  model: null, billing: null,   // model: your own saved settings { saved, baseUrl, model, hasKey }, never the key
   ws: null, people: [], liveSession: null,   // presence from the hub
   page: 'sessions', sessions: [], selected: null, detail: null, tv: null, watching: false,
 };
@@ -52,8 +53,7 @@ async function loadAccount() {
   state.name = profile?.name ?? state.user.email;
   try { state.team = (await api('GET', '/api/team')).team; } catch { state.team = null; }
   if (!state.team) return viewOnboarding();
-  state.hasKey = Boolean((await state.sb.rpc('has_api_key')).data);
-  await loadBilling();
+  await Promise.all([loadModel(), loadBilling()]);
   connect();
   const back = new URLSearchParams(location.search).get('billing');
   if (back) {
@@ -63,6 +63,10 @@ async function loadAccount() {
     if (back === 'done') for (const wait of [1500, 4000, 9000]) setTimeout(async () => { await loadBilling(); if (state.page === 'billing') render(); }, wait);
   }
   render();
+}
+
+async function loadModel() {
+  try { state.model = await api('GET', '/api/model'); } catch { state.model = null; }
 }
 
 async function loadBilling() {
@@ -158,7 +162,7 @@ function onHub(msg) {
 
 // ---- The shell ----------------------------------------------------------------------------
 
-const PAGES = [['sessions', 'Sessions'], ['team', 'Team'], ['library', 'Skills & memory'], ['billing', 'Billing']];
+const PAGES = [['sessions', 'Sessions'], ['team', 'Team'], ['library', 'Skills & memory'], ['billing', 'Model & billing']];
 
 function render() {
   const nav = h('nav', { class: 'nav' }, PAGES.map(([id, label]) => h('button', { class: `nav-pill${state.page === id ? ' on' : ''}`, onclick: () => { state.page = id; render(); } }, label)));
@@ -287,22 +291,62 @@ function libraryPage() {
   return box;
 }
 
-// ---- Billing: plan, credits, and your own key ----------------------------------------------------
+// ---- Model & billing: your own model settings, plan and credits ---------------------------------
+
+// Your own model: any OpenAI-compatible endpoint. The server keeps the key encrypted and never sends it back.
+function modelCard(hosted) {
+  const m = state.model ?? { saved: false, baseUrl: '', model: '', hasKey: false };
+  const err = h('p', { class: 'error-text' });
+  const baseUrl = h('input', { class: 'field', name: 'baseUrl', placeholder: 'Base URL of an OpenAI-compatible endpoint', autocomplete: 'off', spellcheck: 'false' });
+  const model = h('input', { class: 'field', name: 'model', placeholder: 'Model name', autocomplete: 'off', spellcheck: 'false' });
+  const apiKey = h('input', { class: 'field', name: 'apiKey', type: 'password', autocomplete: 'off' });
+  const keepsKey = () => m.hasKey && baseUrl.value.trim().replace(/\/+$/, '') === m.baseUrl;
+  const keyHint = () => {
+    apiKey.placeholder = keepsKey() ? 'API key (leave blank to keep the saved one)' : 'API key (if the endpoint needs one)';
+  };
+  baseUrl.value = m.saved ? m.baseUrl : '';
+  model.value = m.saved ? m.model : '';
+  baseUrl.oninput = keyHint;
+  keyHint();
+  const save = async (ev) => {
+    ev.preventDefault();
+    err.textContent = '';
+    const body = { baseUrl: baseUrl.value.trim(), model: model.value.trim(), apiKey: apiKey.value.trim() };
+    // The same check the server makes, so mistakes show at once. A blank key keeps the saved one (same base URL only).
+    const problem = checkSettings({ ...body, apiKey: body.apiKey || (keepsKey() ? 'saved' : '') });
+    if (problem) { err.textContent = problem; return; }
+    try { await api('POST', '/api/model', body); } catch (x) { err.textContent = x.message; return; }
+    await Promise.all([loadModel(), loadBilling()]);
+    toast('Model settings saved.');
+    render();
+  };
+  const remove = async () => {
+    if (!confirm('Remove your model settings and saved key?')) return;
+    try { await api('DELETE', '/api/model'); } catch (x) { err.textContent = x.message; return; }
+    await Promise.all([loadModel(), loadBilling()]);
+    render();
+  };
+  return h('section', { class: 'card' },
+    h('div', { class: 'card-head' }, h('h2', { class: 'display' }, hosted ? 'Or use your own model' : 'Your model'), m.saved ? h('span', { class: 'pill done' }, 'saved') : null),
+    h('p', { class: 'dim' }, 'Sessions you start run on this model, free of credits. Any OpenAI-compatible chat completions endpoint works: a hosted API, or a server you run. The key is encrypted on the server and never shown again, and teammates cannot use it for their own sessions.'),
+    m.saved ? h('p', { class: 'small' }, `Saved: ${m.model || 'the server’s model'} at ${m.baseUrl || 'the server’s endpoint'}, ${m.hasKey ? 'with a key' : 'no key'}. `, h('button', { class: 'link', type: 'button', onclick: remove }, 'Remove')) : null,
+    h('form', { class: 'model-form', onsubmit: save },
+      h('label', { class: 'small dim' }, 'Base URL', baseUrl),
+      h('label', { class: 'small dim' }, 'Model', model),
+      h('label', { class: 'small dim' }, 'API key', apiKey),
+      err,
+      h('div', { class: 'row left' }, h('button', { class: 'btn btn-punk', type: 'submit' }, m.saved ? 'Save changes' : 'Save'))));
+}
 
 function billingPage() {
   const err = h('p', { class: 'error-text' });
-  const keyCall = async (method, body) => {
-    try { await api(method, '/api/key', body); } catch (x) { err.textContent = x.message; return; }
-    state.hasKey = method === 'POST';
-    await loadBilling();
-    render();
-  };
   const b = state.billing;
   const pay = async (path, body) => {
     try { location.href = (await api('POST', path, body ?? {})).url; } catch (x) { err.textContent = x.message; }   // Stripe's own page takes the card
   };
   const plan = b?.hosted ? h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('h2', { class: 'display' }, 'Plan & credits'), b.active ? h('span', { class: 'pill done' }, 'subscribed') : null),
+    h('p', { class: 'dim small' }, 'Without your own model, sessions you start run on this server’s model and are paid for in credits.'),
     !b.payments
       ? h('p', { class: 'dim' }, 'Payments are not set up on this server yet.')
       : b.active
@@ -315,17 +359,9 @@ function billingPage() {
           h('p', {}, `$${b.plan.usd} a month. Each month adds $${b.plan.creditsUsd} of credits, and unused credits carry over. Sessions you start are charged for the tokens they use.`),
           b.credits > 0 ? h('p', { class: 'dim small' }, `You still have ${b.creditsText} of credits from before. They are usable again once you subscribe.`) : null,
           h('button', { class: 'btn btn-punk', onclick: () => pay('/api/billing/checkout', { kind: 'subscribe' }) }, 'Subscribe →')),
-    b.hasOwnKey ? h('p', { class: 'dim small' }, 'You have your own API key saved, so your sessions run on it and cost no credits.') : null) : null;
-  return h('div', { class: 'billing' },
-    plan,
-    h('section', { class: 'card' },
-      h('div', { class: 'card-head' }, h('h2', { class: 'display' }, b?.hosted ? 'Or use your own Ripple API key' : 'Your Ripple API key')),
-      h('p', { class: 'dim' }, 'Sessions you start run on your Ripple key, free of credits. It is encrypted on the server and never shown again, and teammates cannot use it for their own sessions.'),
-      state.hasKey
-        ? h('p', {}, 'A key is saved. ', h('button', { class: 'link', onclick: () => keyCall('DELETE') }, 'Remove it'))
-        : h('form', { class: 'inline', onsubmit: (ev) => { ev.preventDefault(); keyCall('POST', { key: new FormData(ev.target).get('key') }); } },
-          h('input', { class: 'field', name: 'key', type: 'password', placeholder: 'B200 server key', required: true, autocomplete: 'off' }), h('button', { class: 'btn btn-punk' }, 'Save')),
-      err));
+    b.hasOwnModel ? h('p', { class: 'dim small' }, 'You have your own model saved, so your sessions run on it and cost no credits.') : null,
+    err) : null;
+  return h('div', { class: 'billing' }, modelCard(Boolean(b?.hosted ?? state.model?.hosted)), plan);
 }
 
 boot().catch((err) => { app.replaceChildren(h('p', { class: 'error-text pad' }, `Could not start: ${err.message}`)); });

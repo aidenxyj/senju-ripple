@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeRippleStack, makeRippleSwarm, whoOf } from './index.js';
+import { makeStack, makeSwarm, whoOf } from './index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const echo = { command: process.execPath, args: [path.join(here, '../app/test/echo-server.mjs')], app: 'Finder' };
@@ -10,7 +10,7 @@ let uid = 0;
 const use = (name, input = {}) => ({ type: 'tool_use', id: `t${++uid}`, name, input });
 const reply = (content) => ({ content, stop_reason: content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn', usage: { input_tokens: 10, output_tokens: 5 } });
 
-// 1. Every call carries Ripple-safe params, goes through fit, and is reported.
+// 1. Every call carries adapter-safe params, goes through fit, and is reported.
 {
   const seen = [], calls = [];
   const fitCalls = [];
@@ -28,9 +28,9 @@ const reply = (content) => ({ content, stop_reason: content.some((b) => b.type =
     }
     return reply(params.messages.length === 1 ? [use('echo__shout', { text: 'hello' })] : [{ type: 'text', text: 'shouted HELLO' }]);
   } };
-  const stack = await makeRippleStack({ llm, context: fakeContext, contextBudget: 16000, onCall: (c) => calls.push(c) });
+  const stack = await makeStack({ llm, context: fakeContext, contextBudget: 16000, onCall: (c) => calls.push(c) });
   const events = [];
-  const swarm = await makeRippleSwarm({ stack, config: { servers: { echo }, maxSteps: 8 }, workspace: '/tmp', emit: (e) => events.push(e) });
+  const swarm = await makeSwarm({ stack, config: { servers: { echo }, maxSteps: 8 }, workspace: '/tmp', emit: (e) => events.push(e) });
   await swarm.run('shout hello');
   await swarm.shutdown();
   assert.ok(!events.some((e) => e.type === 'error'), JSON.stringify(events.filter((e) => e.type === 'error')));
@@ -46,7 +46,7 @@ const reply = (content) => ({ content, stop_reason: content.some((b) => b.type =
 {
   const msgs = [{ role: 'user', content: 'hi' }];
   let got;
-  const stack = await makeRippleStack({ llm: { create: async (p) => { got = p.messages; return reply([{ type: 'text', text: 'x' }]); } }, context: null });
+  const stack = await makeStack({ llm: { create: async (p) => { got = p.messages; return reply([{ type: 'text', text: 'x' }]); } }, context: null });
   await stack.create({ messages: msgs, system: 'You are "W".' });
   assert.equal(got, msgs);
   assert.equal(stack.hasContext, false);
@@ -144,7 +144,7 @@ console.log('harness tests passed');
 
 // 7. keepBrowsers: a finished worker's browser stays open; it closes when the next job starts, and at shutdown.
 {
-  const { makeRippleStack, makeRippleSwarm } = await import('./index.js');
+  const { makeStack, makeSwarm } = await import('./index.js');
   let opened = 0, closed = 0;
   const fakeConnect = async (name) => { opened++; return { name, tools: [], pid: null, client: { callTool: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }, close: async () => { closed++; } }; };
   const llm = { async create(params) {
@@ -158,8 +158,8 @@ console.log('harness tests passed');
     }
     return { content: [{ type: 'text', text: 'looked' }], stop_reason: 'end_turn', usage: {} };
   } };
-  const stack = await makeRippleStack({ llm, context: null, guard: false });
-  const swarm = await makeRippleSwarm({ stack, shell: true, keepBrowsers: true, connect: fakeConnect, workspace: '/tmp', config: { servers: { browser: { command: 'x', app: 'Chrome' } }, maxSteps: 4 } });
+  const stack = await makeStack({ llm, context: null, guard: false });
+  const swarm = await makeSwarm({ stack, shell: true, keepBrowsers: true, connect: fakeConnect, workspace: '/tmp', config: { servers: { browser: { command: 'x', app: 'Chrome' } }, maxSteps: 4 } });
   await swarm.run('job 1');
   assert.ok(opened >= 1 && closed === 0, `browser kept open after the worker finished (opened ${opened}, closed ${closed})`);
   await swarm.run('job 2');

@@ -1,32 +1,38 @@
-// Ripple adapter: a model client in the Messages-style shape the swarm engine expects,
-// speaks OpenAI-style chat completions to Ripple (vLLM on a Vast.ai B200). See docs/ripple-notes.md.
+// Model adapter: a model client in the Messages-style shape the swarm engine expects, speaking OpenAI-style
+// chat completions to any compatible endpoint, hosted or self-run.
 
 const IMAGE_OMITTED = '[image omitted]';
 const RETRY_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 const CONTEXT_ERROR = /maximum context length|context length|context window|too many tokens|reduce the length/i;
+const MAX_TOKENS_ERROR = /max_tokens.*(not supported|unsupported)|use .?max_completion_tokens/i;
 
 /**
  * @param {object} o
- * @param {string} o.baseUrl     e.g. http://<vast-ip>:<port>/v1
- * @param {string} o.apiKey
- * @param {string} o.model       e.g. ricursiveai/ripple-65b-preview (used for every call; params.model is ignored)
+ * @param {string} o.baseUrl     the endpoint's OpenAI-style base URL (usually ends in /v1)
+ * @param {string} [o.apiKey]   sent as a bearer token; optional, since local servers often need none
+ * @param {string} o.model       the endpoint's model name (used for every call; params.model is ignored)
+ * @param {boolean} [o.vision]  pass images in tool results through to the model; off: each becomes "[image omitted]"
  * @param {number} [o.maxContext] tokens the endpoint accepts; requests clearly over it fail fast
  * @param {object|null} [o.provider] provider routing for multi-provider routers; none by default (a single vLLM server has no providers).
  * @param {number} [o.maxRetries]
  * @param {number} [o.minOutputTokens] floor for max_tokens, since reasoning spends from the same budget
  * @param {Function} [o.fetch]   injectable for tests
  */
-export function makeRippleLlm({
-  baseUrl, apiKey, model, maxContext = Infinity,
+export function makeLlm({
+  baseUrl, apiKey = '', model, maxContext = Infinity, vision = false,
   provider = null, maxRetries = 5, minOutputTokens = 1024,
   fetch: fetchImpl = globalThis.fetch, timeoutMs = 10 * 60 * 1000,
 } = {}) {
-  if (!baseUrl || !apiKey || !model) throw new Error('makeRippleLlm needs baseUrl, apiKey and model');
+  if (!baseUrl || !model) throw new Error('makeLlm needs baseUrl and model');
   const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const headers = { 'content-type': 'application/json', ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) };
+  // Some endpoints reject max_tokens and want max_completion_tokens. Learned on the first refusal.
+  let completionTokens = false;
 
   async function create(params, { signal } = {}) {
-    const body = toOpenAI(params, { model, minOutputTokens });
+    const body = toOpenAI(params, { model, minOutputTokens, vision });
     if (provider) body.provider = provider;
+    if (completionTokens) renameMaxTokens(body);
 
     // Fail fast on requests that cannot fit, using a deliberately generous estimate (4 chars/token).
     if (Number.isFinite(maxContext) && estimateTokens(body) > maxContext) return contextExceeded();
@@ -37,7 +43,7 @@ export function makeRippleLlm({
       try {
         res = await fetchImpl(url, {
           method: 'POST',
-          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+          headers,
           body: JSON.stringify(body),
           signal: anySignal(signal, timeoutMs),
         });
@@ -45,20 +51,21 @@ export function makeRippleLlm({
       } catch (err) {
         throwIfAborted(signal);
         if (attempt < maxRetries) { await backoff(attempt, signal); continue; }
-        throw withStatus(new Error(`ripple: network error: ${err?.message ?? err}`), 0);
+        throw withStatus(new Error(`model: network error: ${err?.message ?? err}`), 0);
       }
 
       const errMsg = json?.error?.message ?? (res.ok ? '' : `HTTP ${res.status}`);
       if (!res.ok || json?.error) {
         const status = Number(json?.error?.code) || res.status;
         if (CONTEXT_ERROR.test(errMsg)) return contextExceeded();
+        if (!completionTokens && 'max_tokens' in body && MAX_TOKENS_ERROR.test(errMsg)) { completionTokens = true; renameMaxTokens(body); continue; }
         if ((RETRY_STATUS.has(status) || status === 0) && attempt < maxRetries) { await backoff(attempt, signal); continue; }
-        throw withStatus(new Error(`ripple: ${errMsg}`), status);
+        throw withStatus(new Error(`model: ${errMsg}`), status);
       }
       const out = fromOpenAI(json);
       // Providers occasionally return an empty choice list; treat as transient.
       if (!out && attempt < maxRetries) { await backoff(attempt, signal); continue; }
-      if (!out) throw withStatus(new Error('ripple: response had no choices'), 502);
+      if (!out) throw withStatus(new Error('model: response had no choices'), 502);
       return out;
     }
   }
@@ -68,7 +75,7 @@ export function makeRippleLlm({
 
 // ---------- request: Messages shape -> OpenAI shape ----------
 
-export function toOpenAI(params, { model, minOutputTokens = 0 } = {}) {
+export function toOpenAI(params, { model, minOutputTokens = 0, vision = false } = {}) {
   const messages = [];
   const system = systemText(params.system);
   if (system) messages.push({ role: 'system', content: system });
@@ -81,21 +88,26 @@ export function toOpenAI(params, { model, minOutputTokens = 0 } = {}) {
       const calls = blocks.filter((b) => b.type === 'tool_use').map((b) => ({
         id: b.id, type: 'function', function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) },
       }));
-      // thinking, redacted_thinking and compaction blocks are not understood by Ripple and are dropped.
+      // thinking, redacted_thinking and compaction blocks belong to one vendor's format and are dropped.
       if (!text && !calls.length) { messages.push({ role: 'assistant', content: '(no reply)' }); continue; }
       messages.push({ role: 'assistant', content: text || null, ...(calls.length ? { tool_calls: calls } : {}) });
       continue;
     }
     // User turn: tool results become `tool` messages, which must come straight after the assistant's tool_calls.
+    // Tool messages carry text only, so with vision on, a tool result's images follow in a user message.
     const rest = [];
+    const images = [];
     for (const b of blocks) {
       if (b.type === 'tool_result') {
         const text = resultText(b.content);
         messages.push({ role: 'tool', tool_call_id: b.tool_use_id, content: b.is_error ? `Error: ${text || 'tool failed'}` : (text || '(empty result)') });
+        if (vision && Array.isArray(b.content)) for (const c of b.content) { const part = imagePart(c); if (part) images.push(part); }
       } else if (b.type === 'text') rest.push(b.text);
+      else if (vision && imagePart(b)) images.push(imagePart(b));
       else if (b.type === 'image' || b.type === 'document') rest.push(IMAGE_OMITTED);
     }
-    if (rest.length) messages.push({ role: 'user', content: rest.join('\n') });
+    if (images.length) messages.push({ role: 'user', content: [...(rest.length ? [{ type: 'text', text: rest.join('\n') }] : []), ...images] });
+    else if (rest.length) messages.push({ role: 'user', content: rest.join('\n') });
   }
 
   const body = {
@@ -119,7 +131,7 @@ export function toOpenAI(params, { model, minOutputTokens = 0 } = {}) {
   if (params.temperature != null) body.temperature = params.temperature;
   if (params.top_p != null) body.top_p = params.top_p;
   if (params.stop_sequences?.length) body.stop = params.stop_sequences;
-  // betas, context_management, cache_control, metadata, thinking: not understood by Ripple, dropped.
+  // betas, context_management, cache_control, metadata, thinking: vendor-specific, dropped.
   return body;
 }
 
@@ -127,6 +139,21 @@ function systemText(system) {
   if (!system) return '';
   if (typeof system === 'string') return system;
   return system.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n');
+}
+
+// An image block as an OpenAI image_url part, or null.
+function imagePart(b) {
+  if (b?.type !== 'image') return null;
+  const src = b.source ?? {};
+  if (src.type === 'base64' && src.data) return { type: 'image_url', image_url: { url: `data:${src.media_type ?? 'image/png'};base64,${src.data}` } };
+  if (src.type === 'url' && src.url) return { type: 'image_url', image_url: { url: src.url } };
+  return null;
+}
+
+function renameMaxTokens(body) {
+  if (!('max_tokens' in body)) return;
+  body.max_completion_tokens = body.max_tokens;
+  delete body.max_tokens;
 }
 
 function resultText(content) {
@@ -194,7 +221,7 @@ function contextExceeded() {
 }
 
 export function estimateTokens(body) {
-  return Math.ceil(JSON.stringify(body.messages).length / 4) + (body.max_tokens ?? 0);
+  return Math.ceil(JSON.stringify(body.messages).length / 4) + (body.max_tokens ?? body.max_completion_tokens ?? 0);
 }
 
 function withStatus(err, status) { err.status = status; return err; }
@@ -217,13 +244,30 @@ function backoff(attempt, signal) {
   });
 }
 
-/** Reads RIPPLE_* settings from process.env (see docs/SPEC.md "Settings"). */
-export function rippleFromEnv(env = process.env, extra = {}) {
-  return makeRippleLlm({
-    baseUrl: env.RIPPLE_BASE_URL,
-    apiKey: env.RIPPLE_API_KEY,
-    model: env.RIPPLE_MODEL || 'ricursiveai/ripple-65b-preview',
-    maxContext: Number(env.RIPPLE_MAX_CONTEXT) || 131072,
-    ...extra,
-  });
+/**
+ * The model settings in an env: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_MAX_CONTEXT, LLM_VISION.
+ */
+export function llmSettings(env = process.env) {
+  const get = (name) => env[`LLM_${name}`] ?? '';
+  return {
+    baseUrl: get('BASE_URL'),
+    apiKey: get('API_KEY'),
+    model: get('MODEL'),
+    maxContext: Number(get('MAX_CONTEXT')) || Infinity,
+    vision: /^(1|true|yes|on)$/i.test(env.LLM_VISION ?? ''),
+  };
+}
+
+/** What is missing from the model settings, as a sentence, or '' when they are complete. */
+export function missingSettings(s) {
+  const missing = [!s.baseUrl && 'LLM_BASE_URL', !s.model && 'LLM_MODEL'].filter(Boolean);
+  return missing.length ? `Set ${missing.join(' and ')} (any OpenAI-compatible endpoint; see .env.example).` : '';
+}
+
+/** A client from the env's model settings (see llmSettings). */
+export function llmFromEnv(env = process.env, extra = {}) {
+  const s = llmSettings(env);
+  const problem = missingSettings(s);
+  if (problem) throw new Error(problem);
+  return makeLlm({ ...s, ...extra });
 }

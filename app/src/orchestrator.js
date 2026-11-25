@@ -1,5 +1,5 @@
 // The swarm: one planner call splits the goal, then workers run in parallel.
-// Each worker is a Ripple tool loop over MCP tools. Events go to the UI via emit().
+// Each worker is a model tool loop over MCP tools. Events go to the UI via emit().
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -473,7 +473,7 @@ export class Swarm {
     this.idle = idle;           // () => seconds since the user last typed or clicked, or null if unknown
     this.lastDesktopAction = 0; // when an agent last acted on the desktop, to tell its input from the user's
     this.claims = new Map();    // resource -> name of the agent holding it
-    // Server-side clearing, compaction and auto-caching. Off when the client says it has none (Ripple via adapter/),
+    // Server-side clearing, compaction and auto-caching. Off when the client says it has none (any OpenAI-style endpoint via adapter/),
     // or once the API rejects them; then prune() trims old tool results on the client instead.
     this.serverContext = llm?.serverContext !== false;
     this.usage = { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };

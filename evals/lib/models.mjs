@@ -1,5 +1,5 @@
 // Model clients for the eval runner. Every one has the swarm engine's shape: { create(params, { signal }) }.
-//   ripple  adapter/ speaking to the Ripple endpoint in .env
+//   llm     adapter/ speaking to the model endpoint in .env (LLM_BASE_URL, LLM_MODEL, LLM_API_KEY; see .env.example)
 //   stub    a scripted model that solves each task with the task's `stub` steps (checks the runner and the checkers)
 //   noop    a scripted model whose worker gives up at once (every checker must fail)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -11,17 +11,12 @@ export const textOf = (message) => typeof message.content === 'string' ? message
   : message.content.map((b) => b.type === 'text' ? b.text : (b.content ?? []).map((c) => c.text ?? '').join('')).join('\n');
 
 export async function makeModel(name, { task, ctx } = {}) {
-  if (name === 'ripple') {
-    let mod;
-    try { mod = await import('../../adapter/index.js'); } catch (err) {
-      throw new Error(`--model ripple needs adapter/index.js exporting makeRippleLlm: ${err.message}`);
-    }
-    const { RIPPLE_BASE_URL: baseUrl, RIPPLE_API_KEY: apiKey, RIPPLE_MODEL: model, RIPPLE_MAX_CONTEXT } = process.env;
-    if (!baseUrl || !apiKey || !model) throw new Error('--model ripple needs RIPPLE_BASE_URL, RIPPLE_API_KEY and RIPPLE_MODEL in .env');
-    return { llm: mod.makeRippleLlm({ baseUrl, apiKey, model, maxContext: Number(RIPPLE_MAX_CONTEXT) || undefined }), model };
+  if (name === 'llm') {
+    const { llmFromEnv, llmSettings } = await import('../../adapter/index.js');
+    return { llm: llmFromEnv(process.env), model: llmSettings(process.env).model };
   }
   if (name === 'stub' || name === 'noop') return { llm: scripted(name, task, ctx), model: name };
-  throw new Error(`unknown --model "${name}" (use ripple, stub or noop)`);
+  throw new Error(`unknown --model "${name}" (use llm, stub or noop)`);
 }
 
 // One lead that spawns a single worker with the task's servers, then waits until it reports.

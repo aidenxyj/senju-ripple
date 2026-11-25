@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Not worth keeping: cursor motion, window positions, running totals (the last total is saved with the turn).
-const UNSAVED = new Set(['point', 'cursor', 'targets', 'usage', 'reset', 'summon', 'mode', 'account', 'need_key', 'key_saved', 'presence', 'consent']);
+const UNSAVED = new Set(['point', 'cursor', 'targets', 'usage', 'reset', 'summon', 'mode', 'account', 'need_settings', 'settings_saved', 'presence', 'consent']);
 
 export class SessionStore {
   constructor(dir) {

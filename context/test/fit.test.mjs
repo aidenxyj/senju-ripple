@@ -27,10 +27,10 @@ const SAMPLES = {
   prose: 'The lead agent plans the goal, spawns workers, and waits for their reports. Each worker drives one browser window through the senju shell and reads the screen as text. '.repeat(12),
   json: JSON.stringify(Array.from({ length: 40 }, (_, i) => ({ id: 'call_' + i, cmd: 'senju click e' + i, ok: i % 3 !== 0 }))),
 };
-// Real usage.prompt_tokens from a hosted Ripple endpoint, 2026-11-14.
+// Real usage.prompt_tokens from a hosted 65B open-model endpoint, 2026-11-14.
 const REAL = { snapshot: 1189, prices: 1378, prose: 408, json: 721 };
 
-test('countTokens errs high against Ripple\'s real counts, but not wildly', () => {
+test('countTokens errs high against real counts, but not wildly', () => {
   for (const [k, real] of Object.entries(REAL)) {
     const est = countTokens(SAMPLES[k]);
     assert.ok(est >= real, `${k}: estimate ${est} is below real ${real}`);

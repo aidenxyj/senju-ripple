@@ -6,7 +6,7 @@ const call = (name, ...args) => ipcRenderer.invoke(`senju:${name}`, ...args);
 contextBridge.exposeInMainWorld('senju', {
   state: () => call('state'),
   chooseMode: (mode) => call('choose-mode', mode),
-  saveKey: (key) => call('save-key', key),
+  saveSettings: (settings) => call('save-settings', settings),
   signIn: (email, password) => call('sign-in', email, password),
   signOut: () => call('sign-out'),
   openWeb: () => call('open-web'),

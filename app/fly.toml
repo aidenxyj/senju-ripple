@@ -1,4 +1,4 @@
-# The Ripple team server, its own Fly app.
+# The hosted team server, its own Fly app (the app name is the existing deployment).
 # The image needs adapter/, so deploy from the repo root:
 #   fly deploy -c app/fly.toml --dockerfile app/Dockerfile .
 #

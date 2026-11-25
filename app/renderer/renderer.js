@@ -464,7 +464,7 @@ function renderModeChoice(last) {
   add(box, 'div', 'acct-title', 'How do you want to work this time?');
   const row = add(box, 'div', 'mode-choice');
   const options = [
-    ['local', 'On this Mac', 'No account. Agents run here on your own API key.'],
+    ['local', 'On this Mac', 'No account. Agents run here on a model you choose.'],
     ['team', 'With my team', 'Sign in. Share a session across your team\'s computers.'],
   ];
   if (last === 'team') options.reverse();   // the one used last time comes first
@@ -514,22 +514,28 @@ function renderAccount(e) {
   refreshBar();
 }
 
-// Solo mode with no API key yet: ask for it once, store it, then run what was asked.
-let goalWaitingForKey = null;
-function renderKeyPrompt(e) {
+// Solo mode with no model chosen yet: ask once (any OpenAI-compatible endpoint), store it, then run what was asked.
+// The main process sends the current base URL and model; never the key.
+let goalWaitingForSettings = null;
+function renderSettingsPrompt(e) {
   const box = $('account');
-  if (e.goal) goalWaitingForKey = e.goal;
+  if (e.goal) goalWaitingForSettings = e.goal;
+  const now = e.settings ?? {};
   box.hidden = false;
   box.innerHTML = '';
-  add(box, 'div', 'acct-title', 'Add your Ripple B200 server key');
-  const form = add(box, 'form', 'acct-form');
-  const input = add(form, 'input'); input.type = 'password'; input.placeholder = 'B200 server key'; input.required = true; input.autocomplete = 'off';
+  add(box, 'div', 'acct-title', 'Choose a model');
+  const form = add(box, 'form', 'acct-form settings-form');
+  const baseUrl = add(form, 'input'); baseUrl.type = 'text'; baseUrl.placeholder = 'Base URL of an OpenAI-compatible endpoint'; baseUrl.value = now.baseUrl ?? ''; baseUrl.spellcheck = false;
+  const model = add(form, 'input'); model.type = 'text'; model.placeholder = 'Model name'; model.value = now.model ?? ''; model.spellcheck = false;
+  const apiKey = add(form, 'input'); apiKey.type = 'password'; apiKey.autocomplete = 'off';
+  apiKey.placeholder = now.hasKey ? 'API key (blank keeps the saved one)' : 'API key (local servers need none)';
   add(form, 'button', '', 'Save').type = 'submit';
-  form.addEventListener('submit', (ev) => { ev.preventDefault(); window.swarm.saveKey(input.value.trim()); });
-  input.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ev.stopPropagation(); });
-  add(box, 'div', 'acct-note', 'Agents run on your own key. It is encrypted with your Mac\'s keychain and stays on this computer.');
+  form.addEventListener('submit', (ev) => { ev.preventDefault(); window.swarm.saveSettings({ baseUrl: baseUrl.value.trim(), model: model.value.trim(), apiKey: apiKey.value.trim() }); });
+  for (const input of [baseUrl, model, apiKey]) input.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ev.stopPropagation(); });
+  add(box, 'div', 'acct-note', 'Any OpenAI-compatible endpoint works: a hosted API or a server you run yourself. The API key is encrypted with your Mac\'s keychain and only sent to that endpoint.');
   if (e.error) add(box, 'div', 'acct-error', e.error);
-  input.focus();
+  recheckHit();
+  (baseUrl.value ? model : baseUrl).focus();
 }
 
 // Someone's session wants to use this computer. Nothing here runs for them until you allow it.
@@ -602,12 +608,12 @@ window.swarm.onEvent((e) => {
       break;
     case 'reset': reset(); refreshBar(); recheckHit(); break;
     case 'account': renderAccount(e); break;
-    case 'need_key': renderKeyPrompt(e); break;
-    case 'key_saved': {
+    case 'need_settings': renderSettingsPrompt(e); break;
+    case 'settings_saved': {
       $('account').hidden = true;
       $('account').innerHTML = '';
       recheckHit();
-      if (goalWaitingForKey) { window.swarm.submit(goalWaitingForKey); goalWaitingForKey = null; }
+      if (goalWaitingForSettings) { window.swarm.submit(goalWaitingForSettings); goalWaitingForSettings = null; }
       break;
     }
     case 'consent': consentCard(e.session); break;

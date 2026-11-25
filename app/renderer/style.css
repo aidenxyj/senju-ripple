@@ -157,7 +157,10 @@ button:hover { background: rgba(255, 255, 255, 0.14); }
 #account[hidden] { display: none; }
 .acct-title { font-weight: 600; margin-bottom: 8px; }
 .acct-form { display: flex; gap: 6px; }
-.acct-form input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; outline: 0; user-select: text; }
+.acct-form input, .acct-form select { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; outline: 0; user-select: text; }
+.settings-form { flex-wrap: wrap; }
+.settings-form input, .settings-form select { flex: 1 1 40%; }
+.acct-form select option { color: #141414; }
 .mode-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mode-choice button { display: flex; flex-direction: column; gap: 3px; text-align: left; font: inherit; color: var(--text); background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
 .mode-choice button:first-child { border-color: rgba(255, 255, 255, 0.5); }

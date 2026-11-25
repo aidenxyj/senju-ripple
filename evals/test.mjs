@@ -30,7 +30,7 @@ const ALL = process.argv.includes('--all');
   const ws = fs.mkdtempSync(path.join(tmp, 'ws-'));
   fs.writeFileSync(path.join(ws, 'hello.txt'), 'hello from the stub\n');
   assert.equal(tasks['write-file'].check({ workspace: ws }).pass, false);
-  fs.writeFileSync(path.join(ws, 'hello.txt'), '  hello from ripple  \n');
+  fs.writeFileSync(path.join(ws, 'hello.txt'), '  hello from senju  \n');
   assert.equal(tasks['write-file'].check({ workspace: ws }).pass, true, 'surrounding whitespace is fine');
 
   await tasks['sum-csv'].setup({ workspace: ws });

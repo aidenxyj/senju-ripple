@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const LINE = 'hello from ripple';
+const LINE = 'hello from senju';
 
 export default {
   id: 'write-file',

@@ -11,7 +11,8 @@ import { listWindows, processParents, pickWindow } from './windows.js';
 import { demoLlm, demoConnect, demoConfigServers } from './demo.js';
 import { placeWindow } from './place.js';
 import { callTool } from './mcp.js';
-import { makeLlm as ripple } from './llm.js';
+import { makeLlm as buildLlm, llmSettings } from './llm.js';
+import { checkSettings } from '../web/shared/model-settings.js';
 import { ToolHost } from './toolhost.js';
 import { CloudClient, supabaseAuth } from './cloud.js';
 import { DEFAULT_HUB } from './config.js';
@@ -36,21 +37,49 @@ if (app.isPackaged) {
   }
 }
 
-// The solo API key, encrypted with the system keychain and kept in the data folder.
-const keyFile = () => path.join(dataDir(), 'api-key.bin');
-function loadSavedKey() {
+// Solo model settings: { baseUrl, model, apiKey } for any OpenAI-compatible endpoint, stored as JSON encrypted
+// with the system keychain in the data folder. Saved settings win over the env (LLM_* in .env); with nothing
+// saved, the env's are used. An older key-only file (api-key.bin) is read as the key, with base URL and model
+// from the env, until settings are saved. The key never leaves the main process.
+const settingsFile = () => path.join(dataDir(), 'model-settings.bin');
+const oldKeyFile = () => path.join(dataDir(), 'api-key.bin');
+let savedSettings = null;   // { baseUrl, model, apiKey } from the settings file, or null
+let staleLlm = false;       // settings changed since the swarm's model client was made
+function loadSettings() {
   try {
-    if (!process.env.RIPPLE_API_KEY && fs.existsSync(keyFile()) && safeStorage.isEncryptionAvailable()) {
-      process.env.RIPPLE_API_KEY = safeStorage.decryptString(fs.readFileSync(keyFile()));
+    if (!safeStorage.isEncryptionAvailable()) return;
+    const read = (file) => safeStorage.decryptString(fs.readFileSync(file));
+    if (fs.existsSync(settingsFile())) {
+      const { baseUrl = '', model = '', apiKey = '' } = JSON.parse(read(settingsFile()));
+      savedSettings = { baseUrl, model, apiKey };
+    } else if (fs.existsSync(oldKeyFile())) {
+      const env = llmSettings();
+      savedSettings = { baseUrl: env.baseUrl, model: env.model, apiKey: read(oldKeyFile()) };
     }
   } catch { /* unreadable: ask again */ }
 }
-function saveKey(key) {
-  if (!/^\S{20,}$/.test(key)) return 'That does not look like your B200 server key (the RIPPLE_API_KEY its vLLM server was started with).';
-  if (!safeStorage.isEncryptionAvailable()) return 'This computer cannot store the key securely. Put RIPPLE_API_KEY=... in a .env file in the data folder instead.';
+// The settings in use: the saved ones when they name an endpoint, otherwise the env's.
+function modelSettings() {
+  if (savedSettings?.baseUrl) return savedSettings;
+  const { baseUrl, model, apiKey } = llmSettings();
+  return { baseUrl, model, apiKey };
+}
+const hasSettings = () => DEMO || !checkSettings(modelSettings());
+// What the windows may see: never the key itself.
+const publicSettings = () => { const s = modelSettings(); return { baseUrl: s.baseUrl, model: s.model, hasKey: Boolean(s.apiKey) }; };
+function saveSettings(input = {}) {
+  const now = modelSettings();
+  const next = { baseUrl: String(input.baseUrl ?? '').trim().replace(/\/+$/, ''), model: String(input.model ?? '').trim(), apiKey: String(input.apiKey ?? '').trim() };
+  // A blank key keeps the saved one, but only for the same endpoint: a key is never sent somewhere new by accident.
+  if (!next.apiKey && next.baseUrl === now.baseUrl.replace(/\/+$/, '')) next.apiKey = now.apiKey;
+  const problem = checkSettings(next);
+  if (problem) return problem;
+  if (!safeStorage.isEncryptionAvailable()) return 'This computer cannot store the settings securely. Put LLM_BASE_URL, LLM_MODEL and LLM_API_KEY in a .env file in the data folder instead.';
   fs.mkdirSync(dataDir(), { recursive: true });
-  fs.writeFileSync(keyFile(), safeStorage.encryptString(key), { mode: 0o600 });
-  process.env.RIPPLE_API_KEY = key;
+  fs.writeFileSync(settingsFile(), safeStorage.encryptString(JSON.stringify(next)), { mode: 0o600 });
+  try { fs.rmSync(oldKeyFile(), { force: true }); } catch { /* the old file is ignored from now on anyway */ }
+  savedSettings = next;
+  staleLlm = true;
   return null;
 }
 const isMac = process.platform === 'darwin';
@@ -177,11 +206,14 @@ const send = (event) => {
 
 function makeLlm() {
   if (DEMO) return demoLlm;
-  return process.env.RIPPLE_API_KEY ? ripple(process.env.RIPPLE_API_KEY) : null;
+  if (!hasSettings()) return null;
+  // Saved settings are complete on their own: keep an env key from being sent to the saved endpoint.
+  const env = savedSettings?.baseUrl ? Object.fromEntries(Object.entries(process.env).filter(([k]) => !/_API_KEY$/.test(k))) : process.env;
+  return buildLlm(modelSettings(), env);
 }
 
 // ---- Sessions: every job belongs to one, and the launcher shows it live ----------------------------
-const LIVE_SKIP = new Set(['point', 'cursor', 'targets', 'summon', 'mode', 'need_key', 'key_saved', 'consent', 'presence', 'notice']);
+const LIVE_SKIP = new Set(['point', 'cursor', 'targets', 'summon', 'mode', 'need_settings', 'settings_saved', 'consent', 'presence', 'notice']);
 
 // Keep a personal session's events, and pass every session event to the launcher as it happens.
 function record(event) {
@@ -202,9 +234,13 @@ function record(event) {
 }
 
 function ensureSwarm() {
-  if (swarm) return swarm;
+  if (swarm) {
+    if (staleLlm && !swarm.running) { swarm.llm = makeLlm(); staleLlm = false; }   // new model settings take effect on the next job
+    return swarm;
+  }
   const llm = makeLlm();
   if (!llm) return null;
+  staleLlm = false;
   swarm = new Swarm({
     llm, config, workspace, emit: send, layout,
     idle: () => powerMonitor.getSystemIdleTime(),
@@ -229,7 +265,7 @@ async function runGoal(goal, sessionId = null) {
     return { sessionId };
   }
   if (swarm?.running) throw new Error('The last job is still wrapping up. Send it again in a moment.');
-  if (!ensureSwarm()) { send({ type: 'need_key', goal }); throw new Error('Add your Ripple API key first.'); }
+  if (!ensureSwarm()) { send({ type: 'need_settings', goal, settings: publicSettings() }); throw new Error('Choose a model first.'); }
   let meta = sessionId ? sessions.get(sessionId) : null;
   if (!meta) { meta = sessions.create(goal); swarm.lastJob = null; }   // a new session starts fresh, like a new chat
   const before = meta.turns.at(-1);
@@ -271,7 +307,7 @@ const library = () => (TEAM ? new TeamLibrary({ url: HUB, token: async () => (cl
 function launcherState() {
   return {
     mode, team: TEAM, demo: DEMO, lastMode: lastMode(), fixedMode: DEMO ? 'local' : ['local', 'team'].includes(config.mode) ? config.mode : null,
-    hasKey: DEMO || Boolean(process.env.RIPPLE_API_KEY), account: lastAccount, running: isRunning(),
+    hasSettings: hasSettings(), settings: publicSettings(), account: lastAccount, running: isRunning(),
     current: TEAM ? teamLive?.id ?? null : current?.id ?? null, hotkey: pretty(hotkey), webUrl: HUB,
   };
 }
@@ -279,7 +315,7 @@ function launcherState() {
 const launcherHandlers = {
   state: () => launcherState(),
   'choose-mode': async (next) => { await setMode(next); return launcherState(); },
-  'save-key': (key) => { const problem = saveKey(String(key ?? '').trim()); if (problem) throw new Error(problem); return launcherState(); },
+  'save-settings': (settings) => { const problem = saveSettings(settings ?? {}); if (problem) throw new Error(problem); return launcherState(); },
   'sign-in': async (email, password) => {
     if (!cloud) throw new Error('Still reaching the team server. Try again in a moment.');
     await cloud.signIn(String(email ?? '').trim(), String(password ?? ''));
@@ -558,7 +594,7 @@ function stopTracking() {
 
 app.whenReady().then(() => {
   if (isMac) app.dock?.hide();
-  loadSavedKey();
+  loadSettings();
   sessions.recover();   // a turn the app was quit in the middle of is marked as stopped
   createWindow();
   launcher = new Launcher({ root: ROOT, handlers: launcherHandlers });
@@ -589,9 +625,9 @@ app.whenReady().then(() => {
     restoreWindows();
     send({ type: 'reset' });
   });
-  ipcMain.on('solo:key', (_e, key) => {
-    const problem = saveKey(String(key ?? '').trim());
-    send(problem ? { type: 'need_key', error: problem } : { type: 'key_saved' });
+  ipcMain.on('solo:settings', (_e, settings) => {
+    const problem = saveSettings(settings ?? {});
+    send(problem ? { type: 'need_settings', error: problem, settings: publicSettings() } : { type: 'settings_saved' });
   });
   ipcMain.on('app:open-data', () => shell.openPath(dataDir()));
   ipcMain.on('swarm:cancel', () => (TEAM ? cloud?.cancel() : swarm?.cancel()));
@@ -615,7 +651,7 @@ app.whenReady().then(() => {
     try {
       await runGoal(goal, TEAM ? (teamLive?.running ? null : teamLive?.id ?? null) : current?.id ?? null);
     } catch (err) {
-      if (!/API key/.test(err.message)) send({ type: 'notice', message: err.message });
+      if (!/^Choose a model first/.test(err.message)) send({ type: 'notice', message: err.message });
     }
   });
 

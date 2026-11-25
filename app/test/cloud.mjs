@@ -15,7 +15,7 @@ const store = new MemoryStore();
 store.addTeam('t1', 'Robotics');
 store.addUser('james', 'James', 't1');
 store.addUser('linda', 'Linda', 't1');
-await store.setKey('james', 'sk-james');
+await store.setModel('james', { baseUrl: 'http://localhost:8000/v1', model: 'local-model', apiKey: 'sk-james' });
 
 const turns = {};
 const makeLlm = () => ({ async create(params) {

@@ -1,13 +1,13 @@
 // Eval runner. Runs each task in evals/tasks/ through the swarm engine's Swarm with one model,
 // then writes evals/results/<run>.json: one row per task, { task, model, pass, steps, tokens, seconds, invalidCalls }.
 //
-//   npm run eval -- --model ripple|stub|noop [--suite core|hard|games|benchmarks|all] [--task <id>]... [--timeout <seconds>] [--out <file>] [--no-guard]
+//   npm run eval -- --model llm|stub|noop [--suite core|hard|games|benchmarks|all] [--task <id>]... [--timeout <seconds>] [--out <file>] [--no-guard]
 //
 // Suites: core is evals/tasks/*.js (the default, fast), hard is evals/tasks/hard/, games is evals/tasks/games/,
 // benchmarks is evals/tasks/benchmarks/ (ports of MiniWoB++, WebGames and OpenApps; their assets live in evals/benchmarks/).
 // --task looks in every suite, so --task price-hunt works without --suite.
 //
-// ripple runs behind guard/'s guardLlm (repairs tool calls, lead must spawn, worker posts before done)
+// llm runs behind guard/'s guardLlm (repairs tool calls, lead must spawn, worker posts before done)
 // unless --no-guard is given. invalidCalls counts the model's own mistakes, before the guard repairs them.
 //
 // A task module (evals/tasks/<id>.js) exports default { id, goal, setup(ctx), check(ctx) -> { pass, detail } }, plus optional:
@@ -59,13 +59,13 @@ const fill = (text, ctx) => text.replace(/\{(\w+)\}/g, (m, k) => (k in ctx ? Str
 //   skills    a skills source ({ list, read, save }) handed to the Swarm, e.g. lib/skills.mjs
 //   wrapLlm   (llm, { task, ctx }) => llm (or a promise), around the raw model client, inside the meter (recorder)
 //   wrapStack (llm, { task, ctx }) => llm (or a promise), around the whole stack, just below the Swarm (policy)
-//   shell     true: build the swarm exactly as app/ does, harness makeRippleStack + makeRippleSwarm({ shell: true }):
+//   shell     true: build the swarm exactly as app/ does, harness makeStack + makeSwarm({ shell: true }):
 //             Swarm -> shell note -> wrapStack -> guard -> context.fit -> sched -> meter -> wrapLlm -> model.
 //             Confirm cards and questions to the person are answered automatically (`answer`: approve | decline).
 //   contextBudget  tokens per call for context.fit in shell mode (default 32000, as in the app)
 // A checker may also return { score, milestones: [{ name, ok }] }; the row then carries both.
 export async function runTask(task, modelName, {
-  timeout, guard = modelName === 'ripple', seed, skills, wrapLlm, wrapStack,
+  timeout, guard = modelName === 'llm', seed, skills, wrapLlm, wrapStack,
   shell = false, answer = 'approve', contextBudget = 32000,
 } = {}) {
   const started = Date.now();
@@ -102,10 +102,10 @@ export async function runTask(task, modelName, {
       }
     };
     if (shell) {
-      const { makeRippleStack, makeRippleSwarm } = await import('../harness/index.js');
-      const stack = await makeRippleStack({ llm: metered.llm, guard: guard ? true : false, onGuard, contextBudget });
+      const { makeStack, makeSwarm } = await import('../harness/index.js');
+      const stack = await makeStack({ llm: metered.llm, guard: guard ? true : false, onGuard, contextBudget });
       const top = wrapStack ? await wrapStack(stack, { task, ctx }) : stack;
-      swarm = await makeRippleSwarm({ stack: top, shell: true, config, workspace, emit, ...(skills ? { skills } : {}) });
+      swarm = await makeSwarm({ stack: top, shell: true, config, workspace, emit, ...(skills ? { skills } : {}) });
     } else {
       // Swarm -> wrapStack -> guard -> meter -> wrapLlm -> model.
       const guarded = guard ? guardLlm(metered.llm, { onEvent: onGuard }) : metered.llm;
@@ -174,7 +174,7 @@ function parseArgs(argv) {
     else if (a === '--guard') opts.guard = true;
     else throw new Error(`unknown argument "${a}"`);
   }
-  if (!opts.model) throw new Error('pass --model ripple|stub|noop');
+  if (!opts.model) throw new Error('pass --model llm|stub|noop');
   return opts;
 }
 

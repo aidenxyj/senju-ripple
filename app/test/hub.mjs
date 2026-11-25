@@ -16,7 +16,8 @@ const james = store.addUser('james', 'James', 't1');
 const linda = store.addUser('linda', 'Linda', 't1');
 const mona = store.addUser('mona', 'Mona', 't1');
 store.addUser('nobody', 'Nobody');
-await store.setKey('james', 'sk-james');
+// Saved before model settings existed: a bare key, read as { apiKey } (base URL and model then come from the server env).
+store.secrets.set('james', 'sk-james');
 store.memories.push({ scope: 'user', teamId: 't1', subjectId: 'linda', authorId: 'linda', note: 'Linda writes in British English.' });
 store.memories.push({ scope: 'user', teamId: 't1', subjectId: 'nobody', authorId: 'nobody', note: 'private to someone else' });
 
@@ -100,9 +101,9 @@ assert.deepEqual(pres.people.map((p) => p.name).sort(), ['James', 'Linda', 'Mona
 // The web page watches and manages; it cannot start or steer a session.
 lindaWeb.say({ t: 'start', goal: 'x' });
 assert.equal((await lindaWeb.until((m) => m.t === 'error', 'view only')).code, 'view_only');
-// A session runs on its starter's key, so Linda (no key) cannot start one.
+// A session runs on its starter's model, so Linda (none saved) cannot start one.
 lindaMac.say({ t: 'start', goal: 'x' });
-assert.equal((await lindaMac.until((m) => m.t === 'error', 'no key')).code, 'no_key');
+assert.equal((await lindaMac.until((m) => m.t === 'error', 'no model')).code, 'no_model');
 
 jamesMac.say({ t: 'start', goal: "Copy the text from Linda's Word into my doc" });
 const ask = (await lindaMac.until((m) => m.t === 'consent_request', 'consent request')).session;
@@ -163,11 +164,11 @@ assert.ok(seen.leadTools.includes('desktop@james-mac,desktop@linda-mac'));
 assert.ok(seen.lead.some((t) => /A tool server is now available:\n- desktop@linda-mac: Drives apps\. Runs on "Linda Mac", Linda's computer/.test(t)));
 assert.match(seen.lead[0], /Session owner: James\.[\s\S]*Computers connected now:\n- "James Mac" \(James's\): desktop@james-mac/);
 assert.match(seen.moverSystem, /# Several people share this session/);
-// Attribution: who wrote, who answered, whose key, whose memory.
+// Attribution: who wrote, who answered, whose model, whose memory.
 assert.match(seen.afterHandoff, /The user replied: Done \(from Linda\)/);
 assert.ok(ev.some((e) => e.type === 'said' && e.from.name === 'Linda' && e.text === 'also make it bold'));
 assert.ok(ev.some((e) => e.type === 'chat' && e.from === 'lead' && e.text === 'Will do, Linda.'));
-assert.ok(seen.keys.every((k) => k === 'sk-james'));
+assert.ok(seen.keys.every((k) => k.apiKey === 'sk-james' && !k.baseUrl));
 // Memory: only participants' notes reach the lead; new notes are attributed to the person who said them.
 assert.ok(seen.lead.some((t) => /Linda joined the session\. Remembered about Linda:\n- Linda writes in British English\. \(from Linda\)/.test(t)));
 assert.ok(!/private to someone else/.test(seen.lead.join('\n')));

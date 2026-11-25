@@ -1,14 +1,14 @@
 # Senju 千手
 
-> Senju on Ripple-65B Preview (`ricursiveai/ripple-65b-preview`, through the repo's `adapter/`). Every action is visible: popups, cookie banners and YouTube ads are closed with the cursor; on-screen keyboards are clicked key by key (Wordle, calculators); desktop apps are brought on screen when opened; "find a website" clicks the result and leaves it open; scripted page clicks are blocked. `skills/` holds learned skills (Wordle, Minesweeper, price hunt, Google lookup and others); the app rewrites them after each job. Ripple runs on a Vast.ai B200 you rent (`../tools/vast/`): put its `RIPPLE_BASE_URL` and `RIPPLE_API_KEY` in `.env`. Ripple is text only: images in tool results reach it as `[image omitted]`, so the desktop server works from the accessibility tree, not screenshots.
+> Senju on any model: an OpenAI-compatible endpoint you choose, through the repo's `adapter/`. Every action is visible: popups, cookie banners and YouTube ads are closed with the cursor; on-screen keyboards are clicked key by key (Wordle, calculators); desktop apps are brought on screen when opened; "find a website" clicks the result and leaves it open; scripted page clicks are blocked. `skills/` holds learned skills (Wordle, Minesweeper, price hunt, Google lookup and others); the app rewrites them after each job. The model is set in the app's model settings form, or with `LLM_*` in `.env`. The harness is text first: images in tool results reach the model as `[image omitted]` unless `LLM_VISION=1`, so the desktop server works from the accessibility tree, not screenshots.
 
-A prompt bar at the top of your screen. Type a goal, and a swarm of Ripple agents splits it up and works on it in parallel through MCP servers. Each agent has a ghost cursor that parks on the window of the app it is working in. Your real mouse and keyboard stay yours.
+A prompt bar at the top of your screen. Type a goal, and a swarm of agents splits it up and works on it in parallel through MCP servers. Each agent has a ghost cursor that parks on the window of the app it is working in. Your real mouse and keyboard stay yours.
 
 ## Run it
 
 ```bash
 npm install
-cp ../.env .env           # the repo-root .env, with your Vast B200's RIPPLE_BASE_URL and key (../tools/vast/)
+cp ../.env .env           # optional: the repo-root .env with LLM_*; otherwise the app asks for the model on first run
 npm start
 ```
 
@@ -29,8 +29,8 @@ Try `npm run demo` first. It uses scripted fake agents, needs no API key, and le
 ## How it works
 
 - `src/orchestrator.js` holds the swarm and all the agent prompts.
-  - **Lead agent.** A long-running Ripple loop with `spawn_agent`, `wait`, `message_agent`, `stop_agent` and `ask_user`. It spawns workers, waits for events (a worker finished or failed, a worker flagged something, you wrote to it), and replans: adds workers, redirects them, or stops them.
-  - **Workers.** One Ripple tool loop each, acting through MCP tools. They also have `handoff` and `ask_user` (bring you in), `wait_for` (block on another worker's result), `tell_lead` (flag something that changes the plan), and a shared board.
+  - **Lead agent.** A long-running model loop with `spawn_agent`, `wait`, `message_agent`, `stop_agent` and `ask_user`. It spawns workers, waits for events (a worker finished or failed, a worker flagged something, you wrote to it), and replans: adds workers, redirects them, or stops them.
+  - **Workers.** One model tool loop each, acting through MCP tools. They also have `handoff` and `ask_user` (bring you in), `wait_for` (block on another worker's result), `tell_lead` (flag something that changes the plan), and a shared board.
   - **Dependencies.** A worker that depends on others starts right away, does its own setup such as sign-in, then calls `wait_for` and receives their final reports. A wait that would deadlock is refused.
   - **Board.** `board_post` pushes a note to every other working agent on its next step, so partial results spread without going through the lead.
 - `src/skills.js`: stores and loads the skills the lead writes after each job.
