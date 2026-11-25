@@ -90,7 +90,7 @@ def serve():
         "--max-model-len", str(MAX_MODEL_LEN),
         "--reasoning-parser", "ripple",
         "--enable-auto-tool-choice", "--tool-call-parser", "ripple",
-        "--speculative-config", json.dumps({"method": "dflash", "model": DRAFTER, "num_speculative_tokens": 7}),
+        "--speculative-config", json.dumps({"method": "dflash", "model": DRAFTER, "num_speculative_tokens": 10}),
         "--enable-prefix-caching",
         "--max-num-seqs", "64",
     ]

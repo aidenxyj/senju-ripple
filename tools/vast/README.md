@@ -12,6 +12,19 @@ Measured on a Vast B200 against a shared hosted API (OpenRouter), for a realisti
 | Output speed | 25 to 47 tokens/s | **about 125 tokens/s** |
 | Errors | bursts of 503 and 429 | none seen |
 
+### DFlash2 draft length
+
+The server drafts 10 tokens per step (`num_speculative_tokens`). DFlash2 was trained on blocks of 16, and a sweep on one B200 on 2026-11-24 compared 7, 10, 12 and 16. Each was measured on a worker turn (one tool call, about 200 output tokens) and a lead plan (long free text). Values are median output tokens/s:
+
+| Draft length | Worker, one at a time | Worker, 4 at once | Lead, one at a time | Tokens accepted per draft (worker / lead) |
+|---|---|---|---|---|
+| 7 | 256 | 215 | 149 | 3.61 / 2.47 |
+| **10** | **289** | 217 | **156** | 3.82 / 2.50 |
+| 12 | 289 | 242 | 141 | 3.75 / 2.18 |
+| 16 | 283 | 282 | 128 | 4.01 / 2.20 |
+
+10 is the only length that is faster than 7 for both workers and the lead. Longer drafts slow down the lead's free text, because few of the extra tokens are accepted. Each length had only 5 sequential calls and one batch of 4, so the "4 at once" column is noisy.
+
 ## Use it
 
 ```sh

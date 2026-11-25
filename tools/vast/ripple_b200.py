@@ -34,7 +34,7 @@ VLLM_ARGS = [
     "--max-model-len", "131072",
     "--reasoning-parser", "ripple",
     "--enable-auto-tool-choice", "--tool-call-parser", "ripple",
-    "--speculative-config", json.dumps({"method": "dflash", "model": "ricursiveAI/Ripple-65B-Preview-DFlash2", "num_speculative_tokens": 7}),
+    "--speculative-config", json.dumps({"method": "dflash", "model": "ricursiveAI/Ripple-65B-Preview-DFlash2", "num_speculative_tokens": 10}),
     "--enable-prefix-caching", "--max-num-seqs", "64",
 ]
 
